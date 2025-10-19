@@ -42,6 +42,10 @@ HF_SYSTEM_PROMPT = os.getenv(
 HF_MAX_TOKENS = _int_env("HF_MAX_TOKENS", 80)
 HF_TEMPERATURE = _float_env("HF_TEMPERATURE", 0.8)
 
+GEN1_API_KEY = os.getenv("GEN1_API_KEY")
+GEN2_API_KEY = os.getenv("GEN2_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
 
 @dataclass(frozen=True)
 class JokeSettings:
@@ -97,6 +101,15 @@ HF_FAILURE_LIMIT = _int_env("HF_FAILURE_LIMIT", 3)
 
 if not DISCORD_TOKEN:
     raise RuntimeError("Missing DISCORD_TOKEN in .env")
+
+if not GEN1_API_KEY:
+    print("⚠️ Warning: Missing GEN1_API_KEY. Mood detection may fail.")
+
+if not GEN2_API_KEY:
+    print("⚠️ Warning: Missing GEN2_API_KEY. NLP responses may fail.")
+
+if not GROQ_API_KEY:
+    print("⚠️ Warning: Missing GROQ_API_KEY. Groq-based responses may fail.")
 
 if not HF_TOKEN:
     print("⚠️ Warning: Missing HF_TOKEN/HF_API_KEY. Bot will use fallback text generation.")

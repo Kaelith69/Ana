@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.coverage
+.pytest_cache/
+*.egg-info/
+
+# Environments
+.venv/
+venv/
+
+# Logs & local data
+*.log
+*.sqlite3
+
+# Secrets (never commit real keys)
+.env
+.env.*
+!*.example
+*.pem
+
+# Project specific files
+dad_jokes.txt
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

@@ -12,13 +12,11 @@ import json
 import random
 from textblob import TextBlob
 from groq import Groq
+from config import GEN1_API_KEY, GEN2_API_KEY, GROQ_API_KEY
 
-# API Keys and Models
-GEN1_API_KEY = "AIzaSyBC2C8BYmpMmIph43LOeOmsJ9yQQNu9L88"
+# Models
 GEN1_MODEL = "gemini-flash-lite-latest"
-GEN2_API_KEY = "AIzaSyBV1Ho3XpPkoiSXCeJAdZ1lIB3lRiphWn4"
 GEN2_MODEL = "gemini-2.5-flash-lite"
-GROQ_API_KEY = "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"
 
 # Fallback responses for GQ
 FALLBACK_HF_RESPONSES = [
@@ -115,7 +113,7 @@ def process_with_gq(text, mood):
             messages=[
                 {"role": "user", "content": f"Input: {truncated}\nthe mood you should respond in Mood: {mood}"},
             ],
-            temperature=1,
+            temperature=1.3,
             max_completion_tokens=1141,
             top_p=1,
             stream=False,
@@ -144,7 +142,7 @@ def call_gen2(input_text, mood):
             {
                 "role": "user",
                 "parts": [
-                    {"text": f"Input: {input_text}\n the mood you should respond in Mood: {mood}"}
+                    {"text": f"Input: {input_text}\n ,respond as if you are having this Mood: {mood}"}
                 ]
             }
         ],
@@ -155,7 +153,7 @@ def call_gen2(input_text, mood):
         },
         "systemInstruction": {
             "parts": [
-                {"text": "happy, energetic, encourages, empathetic, emotional support, funny, short response one liners, casual chat like a confident woman. Respond only with the message, do not include any notes about your tone or style, and do not explain your response. Only output the reply you would send and dont make it more than 2 lines."}
+                {"text": "happy, energetic, encourages, empathetic, emotional support, funny, short response one liners, casual chat like a confident woman. Respond only with the message text only and nothing else, do not include any notes about your tone or style, and do not explain your response. Only output the reply you would send and dont make it more than 2 lines."}
             ]
         }
     }
