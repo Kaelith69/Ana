@@ -19,45 +19,34 @@ _DEFAULT_JOKES = [
 class DadJokeService:
     def __init__(self, settings: JokeSettings) -> None:
         self.settings = settings
-        self.dad_jokes: List[str] = self._load_dad_jokes()
-        self.known_jokes = set(self.dad_jokes)
         self.last_joke_time = 0.0
         self.daily_joke_count = 0
         self.last_joke_day = self._current_day()
         self.max_jokes_per_day = 3
-        self.initial_fetch_started = False
-        self.refresh_task: Optional[asyncio.Task[None]] = None
 
     def _current_day(self) -> int:
         # Returns the current day as an integer (days since epoch)
         return int(time.time() // 86400)
 
-    def _load_dad_jokes(self) -> List[str]:
-        try:
-            with open(self.settings.jokes_file, "r", encoding="utf-8") as fh:
-                jokes = [line.strip() for line in fh if line.strip()]
-            if jokes:
-                print(f"Loaded {len(jokes)} jokes from {self.settings.jokes_file}")
-                return jokes
-        except FileNotFoundError:
-            print("No joke file found; using default set.")
-        return _DEFAULT_JOKES.copy()
+    # Removed file-based joke loading. All jokes are fetched live from API.
 
-    def append_jokes_to_file(self, jokes: Iterable[str]) -> None:
-        if not jokes:
-            return
-        try:
-            with open(self.settings.jokes_file, "a", encoding="utf-8") as fh:
-                for joke in jokes:
-                    fh.write(f"{joke}\n")
-        except OSError as err:
-            print(f"Failed to write new jokes: {err}")
+    # Removed file-based joke appending.
 
     def random_joke(self) -> Optional[str]:
-        return random.choice(self.dad_jokes) if self.dad_jokes else None
+        """Fetch a live dad joke from the API."""
+        headers = {"Accept": "application/json", "User-Agent": "DadJokeDiscordBot/2.0"}
+        try:
+            res = requests.get(self.settings.api_url, headers=headers, timeout=self.settings.fetch_timeout)
+            if res.status_code == 200:
+                data = res.json()
+                return data.get("joke", "")
+        except requests.RequestException as err:
+            print(f"Failed to fetch dad joke: {err}")
+        return None
 
     def has_jokes(self) -> bool:
-        return bool(self.dad_jokes)
+        # Always true since we fetch live jokes
+        return True
 
     async def maybe_send_joke(self, channel) -> None:
         now = time.monotonic()
@@ -82,69 +71,6 @@ class DadJokeService:
         self.last_joke_time = now
         self.daily_joke_count += 1
 
-    def start_background_tasks(self) -> None:
-        if not self.initial_fetch_started:
-            self.initial_fetch_started = True
-            asyncio.create_task(self._kickoff_initial_fetch())
-        if self.refresh_task is None or self.refresh_task.done():
-            self.refresh_task = asyncio.create_task(self._refresh_jokes_periodically())
+    # Removed background joke fetching logic.
 
-    async def fetch_and_store_jokes(self, count: int) -> int:
-        new_jokes = await asyncio.to_thread(self._fetch_jokes_batch, count)
-        if not new_jokes:
-            return 0
-        unique = [j for j in new_jokes if j not in self.known_jokes]
-        if not unique:
-            return 0
-        self.dad_jokes.extend(unique)
-        self.known_jokes.update(unique)
-        self.append_jokes_to_file(unique)
-        return len(unique)
-
-    def _fetch_jokes_batch(self, count: int) -> List[str]:
-        headers = {"Accept": "application/json", "User-Agent": "DadJokeDiscordBot/2.0"}
-        jokes: set[str] = set()
-        attempts = 0
-        max_attempts = max(count * 3, count + 5)
-        while len(jokes) < count and attempts < max_attempts:
-            attempts += 1
-            try:
-                res = requests.get(
-                    self.settings.api_url,
-                    headers=headers,
-                    timeout=self.settings.fetch_timeout,
-                )
-                if res.status_code != 200:
-                    continue
-                data = res.json()
-                joke = data.get("joke", "").strip()
-                if joke:
-                    jokes.add(joke)
-            except requests.Timeout:
-                print(
-                    "Joke fetch timed out after"
-                    f" {self.settings.fetch_timeout}s; retrying ({attempts}/{max_attempts})."
-                )
-                continue
-            except requests.RequestException as err:
-                print(f"Joke fetch error: {err}")
-                break
-        return list(jokes)
-
-    async def _refresh_jokes_periodically(self) -> None:
-        while True:
-            await asyncio.sleep(self.settings.fetch_interval)
-            try:
-                added = await self.fetch_and_store_jokes(self.settings.fetch_batch)
-                if added:
-                    print(f"Fetched {added} new dad jokes.")
-            except Exception as err:
-                print(f"Joke refresh failed: {err}")
-
-    async def _kickoff_initial_fetch(self) -> None:
-        try:
-            added = await self.fetch_and_store_jokes(self.settings.fetch_batch)
-            if added:
-                print(f"Primed with {added} fresh jokes.")
-        except Exception as err:
-            print(f"Initial joke fetch failed: {err}")
+    # Removed batch joke fetching and periodic refresh logic.

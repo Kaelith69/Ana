@@ -41,7 +41,7 @@ async def joke(ctx):
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
-    joke_service.start_background_tasks()
+    # joke_service.start_background_tasks() removed; jokes are now fetched live
 
 @bot.event
 async def on_message(message):

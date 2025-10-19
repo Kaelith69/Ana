@@ -47,7 +47,7 @@ HF_TEMPERATURE = _float_env("HF_TEMPERATURE", 0.8)
 class JokeSettings:
     chance: float
     cooldown: int
-    jokes_file: str
+    # jokes_file removed; jokes are now fetched live
     fetch_batch: int
     fetch_interval: int
     fetch_timeout: int
@@ -57,7 +57,7 @@ class JokeSettings:
 JOKE_SETTINGS = JokeSettings(
     chance=_float_env("JOKE_CHANCE", 0.15),
     cooldown=_int_env("JOKE_COOLDOWN", 60),
-    jokes_file=os.getenv("JOKES_FILE", "dad_jokes.txt"),
+    # jokes_file removed; jokes are now fetched live
     fetch_batch=_int_env("JOKE_FETCH_BATCH", 25),
     fetch_interval=_int_env("JOKE_FETCH_INTERVAL", 3600),
     fetch_timeout=_int_env("JOKE_FETCH_TIMEOUT", 8),
@@ -65,34 +65,28 @@ JOKE_SETTINGS = JokeSettings(
 )
 
 TRIGGER_WORDS = (
-    "hello", "hi", "hey", "yo", "sup", "wassup", "hola", "namaste", "bonjour",
-    "goodmorning", "goodnight", "morning", "night", "evening", "afternoon",
-    "bot", "ai", "ana", "assistant", "machine", "algorithm", "chatgpt", "gpt", 
-    "openai", "neural", "synthetic", "digital", "intelligence", "program", "script",
-    "automaton", "cyber", "android", "system", "sentient", "simulation",
-    "nerd", "geek", "coder", "hacker", "developer", "programmer", "tech", 
-    "engineer", "science", "math", "logic", "data", "python", "javascript", 
-    "node", "api", "server", "terminal", "console", "command", "linux", "hacking", 
-    "modding", "debug", "compile", "execute", "binary", "quantum", "cyberpunk",
-    "sad", "happy", "bored", "tired", "angry", "lonely", "depressed", 
-    "excited", "anxious", "stressed", "peaceful", "relaxed", "mad", "cry", 
-    "laugh", "lol", "lmao", "omg", "wtf", "wow", "bruh", "bro", "dude", "fam",
-    "think", "thought", "dream", "believe", "imagine", "wonder", "truth", 
-    "reality", "existence", "meaning", "philosophy", "soul", "universe", 
-    "cosmos", "life", "death", "god", "time", "space", "fate", "destiny", 
-    "infinite", "multiverse", "simulation", "illusion","smart", "stupid", "dumb", "genius", "funny", "annoying", "weird", 
-    "cool", "creepy", "cute", "awesome", "beautiful", "ugly", "nice", 
-    "mean", "evil", "good", "bad","what", "why", "how", "when", "where", "who", "maybe", "idk", "tell", "explain", 
-    "teach", "say", "guess", "answer", "question", "talk", "chat", "listen", "respond",
-    "reply", "help", "show", "create", "make", "do", "fix", "build", "run",
-    "meme", "reddit", "discord", "youtube", "twitch", "anime", "manga", 
-    "movie", "game", "gaming", "player", "quest", "npc", "level", "loot", 
-    "xp", "boss", "fight", "battle", "weapon", "armor", "magic", "spell", "sci-fi",
-    "space", "alien", "robot", "future", "time travel", "cyberpunk", "matrix", 
-    "mars", "nebula", "star", "galaxy", "wormhole", "blackhole","fr", "ngl", "idc", "ikr", "smh", "btw", "yup", "nope", "sure", "nah", 
-    "yikes", "sheesh", "literally", "brother", "sister", "guys", "yo", "wait", 
-    "listen", "look", "bruh", "damn", "fire", "chill", "vibe", "energy",
+    "ana",
+    "hello", "hi", "hey", "yo", "sup",
+    "morning", "goodmorning", "afternoon", "evening", "goodnight", "night",
+    "gm", "gn", "goodafternoon", "goodevening",
+    "namaste", "hola", "bonjour",
+    "welcome", "bye", "goodbye", "takecare", "see ya", "seeya", "cya", "later",
+    "happybirthday", "birthday", "hbd", "happybday",
+    "happyanniversary", "congrats", "congratulations", "bestwishes",
+    "happynewyear", "newyear", "merrychristmas", "christmas", "eidh", "eid",
+    "diwali", "pongal", "onam", "holi", "ramadan", "valentines", "valentine",
+    "happymarriedlife", "wedding", "engagement", "babyshower", "getwellsoon",
+    "sad", "happy", "tired", "angry", "bored", "excited",
+    "lol", "lmao", "omg", "wtf", "wow", "bruh", "bro", "dude",
+    "good", "bad", "cool", "funny", "weird", "nice", "evil", "awesome", "cute",
+    "think", "dream", "believe", "reality", "universe", "life", "death",
+    "what", "why", "how", "when", "where", "who",
+    "idk", "tell", "explain", "say", "help",
+    "anime", "movie", "game", "player", "level", "boss", "fight",
+    "space", "alien", "future", "time", "matrix",
+    "fr", "ngl", "ikr", "smh", "btw", "yup", "nah", "sheesh", "damn", "vibe", "chill"
 )
+
 
 FALLBACK_HF_RESPONSES = (
     "Damn,ok you left me speechless with your shitty as text but I heard you loud and clear",
