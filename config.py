@@ -81,14 +81,7 @@ TRIGGER_WORDS = (
     "diwali", "pongal", "onam", "holi", "ramadan", "valentines", "valentine",
     "happymarriedlife", "wedding", "engagement", "babyshower", "getwellsoon",
     "sad", "happy", "tired", "angry", "bored", "excited",
-    "lol", "lmao", "omg", "wtf", "wow", "bruh", "bro", "dude",
-    "good", "bad", "cool", "funny", "weird", "nice", "evil", "awesome", "cute",
-    "think", "dream", "believe", "reality", "universe", "life", "death",
-    "what", "why", "how", "when", "where", "who",
-    "idk", "tell", "explain", "say", "help",
-    "anime", "movie", "game", "player", "level", "boss", "fight",
-    "space", "alien", "future", "time", "matrix",
-    "fr", "ngl", "ikr", "smh", "btw", "yup", "nah", "sheesh", "damn", "vibe", "chill"
+    "lmao", "omg","wow", "bruh"
 )
 
 
