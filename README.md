@@ -60,6 +60,27 @@ GEN2_API_KEY=your_gemini_api_key_here
 - `GEN2_API_KEY`: Gemini completions
 - `dad_jokes.txt`: Optional. If missing, bot starts with built-in jokes and creates the file after first fetch.
 
+IMPORTANT: Do NOT commit your `.env` file to the repository. It often contains secrets (bot tokens, API keys). This project already includes `.env` in `.gitignore`, but if you accidentally have a tracked `.env` file you should remove it from the git index (see steps below).
+
+To avoid committing secrets, set the environment variable instead of storing it in the repo. Example PowerShell commands:
+
+```powershell
+# Temporary for current session
+$env:DISCORD_TOKEN = '<PASTE_YOUR_TOKEN_HERE>'
+
+# Persist for current Windows user (restart terminals/IDE to pick up)
+[Environment]::SetEnvironmentVariable('DISCORD_TOKEN','<PASTE_YOUR_TOKEN_HERE>','User')
+```
+
+If you already committed a `.env` with secrets, remove it from the repo history or at least from the index with:
+
+```powershell
+git rm --cached .env
+git commit -m "Remove .env from repository"
+git push origin main
+```
+
+
 ---
 
 ## Usage
