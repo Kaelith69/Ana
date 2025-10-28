@@ -1,16 +1,8 @@
-def process_with_nlp(text: str) -> str:
-    """Unified NLP entry point for Discord bot."""
-    mood = call_gen1(text)
-    if not mood:
-        return "Failed to detect mood."
-    if mood in ["Rude", "Sarcastic", "Flirty"]:
-        return process_with_gq(text, mood)
-    else:
-        return call_gen2(text, mood)
 import requests
 import json
 import random
-from textblob import TextBlob
+import re
+from typing import Optional
 from groq import Groq
 from config import GEN1_API_KEY, GEN2_API_KEY, GROQ_API_KEY
 
@@ -18,54 +10,133 @@ from config import GEN1_API_KEY, GEN2_API_KEY, GROQ_API_KEY
 GEN1_MODEL = "gemini-flash-lite-latest"
 GEN2_MODEL = "gemini-2.5-flash-lite"
 
-# Fallback responses for GQ
-FALLBACK_HF_RESPONSES = [
+# Fallback responses
+FALLBACK_RESPONSES = [
     "Not sure what to say to that.",
     "Interesting...",
     "Well, that's something.",
     "Cool story, bro."
 ]
 
-def call_gen1(input_text):
-    """Gen1: Mood detection using Gemini Flash Lite"""
+
+def process_with_nlp(text: str) -> Optional[str]:
+    """Unified entry point: try GROQ first, then GEN1, then GEN2.
+
+    Returns a reply string (may be empty)."""
+    clean_text = (text or "").strip()
+    if not clean_text:
+        return ""
+
+    # Try GROQ primary
+    try:
+        reply = call_groq(clean_text)
+        if reply:
+            return reply
+    except Exception as e:
+        print(f"GROQ primary failed: {e}")
+
+    # Fallback to GEN1 (backup)
+    try:
+        reply = call_gen1(clean_text)
+        if reply:
+            return reply
+    except Exception as e:
+        print(f"Gen1 backup failed: {e}")
+
+    # Final fallback to GEN2 (backup2)
+    try:
+        reply = call_gen2(clean_text)
+        if reply:
+            return reply
+    except Exception as e:
+        print(f"Gen2 backup2 failed: {e}")
+
+    # If everything fails, return a random fallback
+    return random.choice(FALLBACK_RESPONSES)
+
+
+def call_groq(input_text: str) -> Optional[str]:
+    """Generate a response using Groq (primary)."""
+    truncated = input_text[:1000]
+    client = Groq(api_key=GROQ_API_KEY)
+    try:
+        completion = client.chat.completions.create(
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            messages=[{"role": "user", "content": f"Respond concisely to the user input:\n{truncated}"}],
+            temperature=1.0,
+            max_completion_tokens=400,
+            top_p=1,
+            stream=False,
+            stop=None,
+        )
+        content = completion.choices[0].message.content
+        # Normalize content to plain text
+        raw = None
+        if content is None:
+            raw = None
+        elif isinstance(content, str):
+            raw = content
+        else:
+            try:
+                raw = json.dumps(content)
+            except Exception:
+                raw = str(content)
+        reply = normalize_response(raw)
+        print("\nGROQ Output:")
+        print(reply)
+        return reply
+    except Exception as err:
+        print(f"Groq request failed: {err}")
+        return None
+
+
+def call_gen1(input_text: str) -> Optional[str]:
+    """Backup: Use Gen1 (Gemini Flash Lite) to generate a response.
+
+    This replaces the previous mood-detection usage of Gen1 and now generates a reply.
+    """
     API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEN1_MODEL}:streamGenerateContent"
-    
+
     headers = {
         'Content-Type': 'application/json',
         'X-goog-api-key': GEN1_API_KEY
     }
-    
+
     data = {
         "contents": [
             {
                 "role": "user",
                 "parts": [
-                    {"text": input_text}
+                    {"text": f"Input: {input_text}\nRespond concisely in 1-2 lines."}
                 ]
             }
         ],
         "generationConfig": {
+            "temperature": 1.2,
             "thinkingConfig": {"thinkingBudget": 0},
             "responseMimeType": "application/json"
         },
         "systemInstruction": {
             "parts": [
-                {"text": "check and analyze the input and return which mood from the below set it matches, only choose a single one [\"Calm\", \"Happy\", \"Empathetic\", \"Flirty\", \"Rude\", \"Sarcastic\", \"Passionate\", \"Moody\"]"}
+                {"text": "Provide a short, casual, friendly reply. Output only the reply text."}
             ]
         }
     }
-    
-    response = requests.post(API_URL, headers=headers, json=data, stream=True)
-    mood = None
+
+    try:
+        response = requests.post(API_URL, headers=headers, json=data, stream=True, timeout=30)
+    except Exception as e:
+        print(f"Gen1 request error: {e}")
+        return None
+
     full_response = ""
-    
     if response.status_code == 200:
         buffer = ""
         for line in response.iter_lines():
             if line:
                 line_text = line.decode('utf-8')
                 buffer += line_text
-        
+
         try:
             chunks = json.loads(buffer)
             for chunk in chunks:
@@ -74,75 +145,41 @@ def call_gen1(input_text):
                         parts = chunk['candidates'][0]['content'].get('parts', [])
                         for part in parts:
                             if 'text' in part:
-                                text = part['text']
-                                full_response += text
-            
-            print("Gen1 (Mood Detection) Output:")
+                                full_response += part['text']
+            print("\nGen1 Output:")
             print(full_response)
-            
-            # Extract mood from JSON response
-            try:
-                mood_json = json.loads(full_response)
-                mood = mood_json.get("mood")
-            except:
-                # Fallback: search for mood keywords in response
-                for m in ["Calm", "Happy", "Empathetic", "Flirty", "Rude", "Sarcastic", "Passionate", "Moody"]:
-                    if m.lower() in full_response.lower():
-                        mood = m
-                        break
         except Exception as e:
             print(f"Error parsing Gen1 response: {e}")
+            return None
     else:
         print(f"Gen1 Error: {response.status_code}")
         print(response.text)
-    
-    return mood
+        return None
 
-def process_with_gq(text, mood):
-    """GQ: Process with Groq using TextBlob sentiment analysis"""
-    clean_text = (text or "").strip()
-    if not clean_text:
-        return ""
-    
-    
-    truncated = clean_text[:200]
-    client = Groq(api_key=GROQ_API_KEY)
-    try:
-        completion = client.chat.completions.create(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
-            messages=[
-                {"role": "user", "content": f"Input: {truncated}\nthe mood you should respond in Mood: {mood}"},
-            ],
-            temperature=1.3,
-            max_completion_tokens=1141,
-            top_p=1,
-            stream=False,
-            stop=None
-        )
-        content = completion.choices[0].message.content
-        reply = content.strip() if content is not None else random.choice(FALLBACK_HF_RESPONSES)
-    except Exception as err:
-        print(f"Groq request failed: {err}")
-        return random.choice(FALLBACK_HF_RESPONSES)
-    print("\nGQ Output:")
-    print(reply)
-    return reply
+    # Normalize the response to plain text
+    normalized = normalize_response(full_response)
+    if normalized:
+        return normalized
+    # fallback: remove surrounding braces/brackets and return cleaned
+    cleaned = re.sub(r'^[\{\[]+|[\}\]]+$', '', full_response or '').strip()
+    return cleaned or None
 
-def call_gen2(input_text, mood):
-    """Gen2: Response generation using Gemini 2.5 Flash Lite"""
+
+def call_gen2(input_text: str) -> Optional[str]:
+    """Final fallback: Use Gen2 (Gemini 2.5) to generate a response."""
     API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEN2_MODEL}:streamGenerateContent"
-    
+
     headers = {
         'Content-Type': 'application/json',
         'X-goog-api-key': GEN2_API_KEY
     }
-    
+
     data = {
         "contents": [
             {
                 "role": "user",
                 "parts": [
-                    {"text": f"Input: {input_text}\n ,respond as if you are having this Mood: {mood}"}
+                    {"text": f"Input: {input_text}\nRespond in a short, friendly tone (1-2 lines)."}
                 ]
             }
         ],
@@ -153,21 +190,25 @@ def call_gen2(input_text, mood):
         },
         "systemInstruction": {
             "parts": [
-                {"text": "happy, energetic, encourages, empathetic, emotional support, funny, short response one liners, casual chat like a confident woman. Respond only with the message text only and nothing else, do not include any notes about your tone or style, and do not explain your response. Only output the reply you would send and dont make it more than 2 lines."}
+                {"text": "Short, casual chat-like replies. Output only the reply text, one or two lines max."}
             ]
         }
     }
-    
-    response = requests.post(API_URL, headers=headers, json=data, stream=True)
+
+    try:
+        response = requests.post(API_URL, headers=headers, json=data, stream=True, timeout=30)
+    except Exception as e:
+        print(f"Gen2 request error: {e}")
+        return None
+
     full_response = ""
-    
     if response.status_code == 200:
         buffer = ""
         for line in response.iter_lines():
             if line:
                 line_text = line.decode('utf-8')
                 buffer += line_text
-        
+
         try:
             chunks = json.loads(buffer)
             for chunk in chunks:
@@ -176,46 +217,94 @@ def call_gen2(input_text, mood):
                         parts = chunk['candidates'][0]['content'].get('parts', [])
                         for part in parts:
                             if 'text' in part:
-                                text = part['text']
-                                full_response += text
-            
+                                full_response += part['text']
             print("\nGen2 Output:")
             print(full_response)
         except Exception as e:
             print(f"Error parsing Gen2 response: {e}")
+            return None
     else:
         print(f"Gen2 Error: {response.status_code}")
         print(response.text)
-    
-    # Ensure output is plain text, not JSON object
-    try:
-        # If the response is a JSON string with a 'response' key, extract it
-        parsed = json.loads(full_response)
-        if isinstance(parsed, dict) and 'response' in parsed:
-            return parsed['response']
-    except Exception:
-        pass
-    return full_response
+        return None
 
-def main():
-    user_input = input("Enter your input: ")
-    
-    # Step 1: Detect mood with Gen1
-    mood = call_gen1(user_input)
-    
-    if not mood:
-        print("Failed to detect mood. Exiting.")
-        return
-    
-    print(f"\nDetected Mood: {mood}")
-    
-    # Step 2: Route to GQ or Gen2 based on mood
-    if mood in ["Rude", "Sarcastic", "Flirty"]:
-        print("\n→ Routing to GQ (Groq)")
-        process_with_gq(user_input, mood)
-    else:
-        print("\n→ Routing to Gen2 (Gemini)")
-        call_gen2(user_input, mood)
+    # Normalize the response to plain text
+    normalized = normalize_response(full_response)
+    if normalized:
+        return normalized
+    cleaned = re.sub(r'^[\{\[]+|[\}\]]+$', '', full_response or '').strip()
+    return cleaned or None
+
+
+def normalize_response(raw: Optional[str]) -> Optional[str]:
+    """Turn model output into a plain human-like string.
+
+    Handles cases where the model returns JSON like {"message": "..."} or nested structures.
+    Returns None if there's no usable text.
+    """
+    if not raw:
+        return None
+    s = raw.strip()
+    # If it looks like JSON, try parsing
+    if s.startswith('{') or s.startswith('['):
+        try:
+            parsed = json.loads(s)
+            # helper to find the first string inside nested structures
+            def find_str(obj):
+                if isinstance(obj, str):
+                    return obj
+                if isinstance(obj, dict):
+                    for vv in obj.values():
+                        r = find_str(vv)
+                        if r:
+                            return r
+                if isinstance(obj, list):
+                    for item in obj:
+                        r = find_str(item)
+                        if r:
+                            return r
+                return None
+
+            # If it's a plain string
+            if isinstance(parsed, str):
+                return parsed.strip()
+            # If dict, prefer common keys
+            if isinstance(parsed, dict):
+                for key in ('message', 'response', 'reply', 'text', 'content'):
+                    v = parsed.get(key)
+                    if isinstance(v, str) and v.strip():
+                        return v.strip()
+                # look deeper for first string
+                r = find_str(parsed)
+                if r:
+                    return r.strip()
+            # If list, find first string element
+            if isinstance(parsed, list):
+                for item in parsed:
+                    if isinstance(item, str) and item.strip():
+                        return item.strip()
+                    r = None
+                    if isinstance(item, (dict, list)):
+                        r = find_str(item)
+                    if r:
+                        return r.strip()
+        except Exception:
+            pass
+
+    # Try regex for common patterns like "message": "..."
+    m = re.search(r'"message"\s*:\s*"([^"]+)"', s)
+    if m:
+        return m.group(1).strip()
+    m = re.search(r"[\'\"]message[\'\"]\s*:\s*[\'\"]([^\'\"]+)[\'\"]", s)
+    if m:
+        return m.group(1).strip()
+
+    # Remove surrounding braces/brackets/quotes if any and return
+    cleaned = s.strip(' \n\r\t\"\'')
+    return cleaned if cleaned else None
+
 
 if __name__ == "__main__":
-    main()
+    user_input = input("Enter your input: ")
+    print(process_with_nlp(user_input))
+
