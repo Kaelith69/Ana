@@ -31,17 +31,6 @@ def _float_env(var_name: str, default: float) -> float:
 
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-HF_API_KEY = os.getenv("HF_API_KEY")
-HF_TOKEN = os.getenv("HF_TOKEN") or HF_API_KEY
-HF_CHAT_MODEL = os.getenv("HF_CHAT_MODEL", "meta-llama/Llama-3.3-70B-Instruct")
-HF_CHAT_BASE_URL = os.getenv("HF_CHAT_BASE_URL", "https://router.huggingface.co/v1")
-HF_SYSTEM_PROMPT = os.getenv(
-    "HF_SYSTEM_PROMPT",
-    "You are a friendly Discord bot who provides concise, upbeat responses when users say hello.",
-)
-HF_MAX_TOKENS = _int_env("HF_MAX_TOKENS", 80)
-HF_TEMPERATURE = _float_env("HF_TEMPERATURE", 0.8)
-
 GEN1_API_KEY = os.getenv("GEN1_API_KEY")
 GEN2_API_KEY = os.getenv("GEN2_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -84,16 +73,8 @@ TRIGGER_WORDS = (
     "lmao", "omg","wow", "bruh"
 )
 
-
-FALLBACK_HF_RESPONSES = (
-    "Damn,ok you left me speechless with your shitty as text but I heard you loud and clear",
-    "urgh lemme sleep you dumbass",
-    "Whats it asshole",
-)
-HF_FAILURE_LIMIT = _int_env("HF_FAILURE_LIMIT", 3)
-
 if not DISCORD_TOKEN:
-    raise RuntimeError("Missing DISCORD_TOKEN in .env")
+    print("⚠️ Warning: Missing DISCORD_TOKEN in .env. Bot will not start.")
 
 if not GEN1_API_KEY:
     print("⚠️ Warning: Missing GEN1_API_KEY. Mood detection may fail.")
@@ -103,6 +84,3 @@ if not GEN2_API_KEY:
 
 if not GROQ_API_KEY:
     print("⚠️ Warning: Missing GROQ_API_KEY. Groq-based responses may fail.")
-
-if not HF_TOKEN:
-    print("⚠️ Warning: Missing HF_TOKEN/HF_API_KEY. Bot will use fallback text generation.")
