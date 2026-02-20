@@ -10,6 +10,9 @@ from config import GEN1_API_KEY, GEN2_API_KEY, GROQ_API_KEY
 GEN1_MODEL = "gemini-flash-lite-latest"
 GEN2_MODEL = "gemini-2.5-flash-lite"
 
+# Groq client (instantiated once)
+_groq_client: Optional[Groq] = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
 # Fallback responses
 FALLBACK_RESPONSES = [
     "Not sure what to say to that.",
@@ -37,7 +40,7 @@ def process_with_nlp(text: str) -> Optional[str]:
 
     # Fallback to GEN1 (backup)
     try:
-        reply = call_gen1(clean_text)
+        reply = call_gemini(GEN1_MODEL, GEN1_API_KEY, clean_text, label="Gen1")
         if reply:
             return reply
     except Exception as e:
@@ -45,7 +48,7 @@ def process_with_nlp(text: str) -> Optional[str]:
 
     # Final fallback to GEN2 (backup2)
     try:
-        reply = call_gen2(clean_text)
+        reply = call_gemini(GEN2_MODEL, GEN2_API_KEY, clean_text, label="Gen2")
         if reply:
             return reply
     except Exception as e:
@@ -57,10 +60,11 @@ def process_with_nlp(text: str) -> Optional[str]:
 
 def call_groq(input_text: str) -> Optional[str]:
     """Generate a response using Groq (primary)."""
+    if _groq_client is None:
+        return None
     truncated = input_text[:1000]
-    client = Groq(api_key=GROQ_API_KEY)
     try:
-        completion = client.chat.completions.create(
+        completion = _groq_client.chat.completions.create(
             model="meta-llama/llama-4-scout-17b-16e-instruct",
             messages=[{"role": "user", "content": f"Respond concisely to the user input:\n{truncated}"}],
             temperature=1.0,
@@ -90,150 +94,79 @@ def call_groq(input_text: str) -> Optional[str]:
         return None
 
 
-def call_gen1(input_text: str) -> Optional[str]:
-    """Backup: Use Gen1 (Gemini Flash Lite) to generate a response.
+def call_gemini(model: str, api_key: Optional[str], input_text: str, label: str = "Gemini") -> Optional[str]:
+    """Call a Gemini model via the Google Generative Language API (streaming endpoint).
 
-    This replaces the previous mood-detection usage of Gen1 and now generates a reply.
+    Used for both Gen1 and Gen2 fallbacks.
     """
-    API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEN1_MODEL}:streamGenerateContent"
-
+    if not api_key:
+        return None
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent"
     headers = {
-        'Content-Type': 'application/json',
-        'X-goog-api-key': GEN1_API_KEY
+        "Content-Type": "application/json",
+        "X-goog-api-key": api_key,
     }
-
     data = {
         "contents": [
             {
                 "role": "user",
-                "parts": [
-                    {"text": f"Input: {input_text}\nRespond concisely in 1-2 lines."}
-                ]
+                "parts": [{"text": f"Input: {input_text}\nRespond concisely in 1-2 lines."}],
             }
         ],
         "generationConfig": {
             "temperature": 1.2,
             "thinkingConfig": {"thinkingBudget": 0},
-            "responseMimeType": "application/json"
         },
         "systemInstruction": {
-            "parts": [
-                {"text": "Provide a short, casual, friendly reply. Output only the reply text."}
-            ]
-        }
+            "parts": [{"text": "Provide a short, casual, friendly reply. Output only the reply text."}]
+        },
     }
 
     try:
-        response = requests.post(API_URL, headers=headers, json=data, stream=True, timeout=30)
+        response = requests.post(api_url, headers=headers, json=data, stream=True, timeout=30)
     except Exception as e:
-        print(f"Gen1 request error: {e}")
+        print(f"{label} request error: {e}")
         return None
 
-    full_response = ""
-    if response.status_code == 200:
-        buffer = ""
-        for line in response.iter_lines():
-            if line:
-                line_text = line.decode('utf-8')
-                buffer += line_text
-
-        try:
-            chunks = json.loads(buffer)
-            for chunk in chunks:
-                if 'candidates' in chunk and len(chunk['candidates']) > 0:
-                    if 'content' in chunk['candidates'][0]:
-                        parts = chunk['candidates'][0]['content'].get('parts', [])
-                        for part in parts:
-                            if 'text' in part:
-                                full_response += part['text']
-            print("\nGen1 Output:")
-            print(full_response)
-        except Exception as e:
-            print(f"Error parsing Gen1 response: {e}")
-            return None
-    else:
-        print(f"Gen1 Error: {response.status_code}")
+    if response.status_code != 200:
+        print(f"{label} Error: {response.status_code}")
         print(response.text)
         return None
 
-    # Normalize the response to plain text
+    buffer = ""
+    for line in response.iter_lines():
+        if line:
+            buffer += line.decode("utf-8")
+
+    full_response = ""
+    try:
+        chunks = json.loads(buffer)
+        for chunk in chunks:
+            candidates = chunk.get("candidates", [])
+            if candidates and "content" in candidates[0]:
+                for part in candidates[0]["content"].get("parts", []):
+                    if "text" in part:
+                        full_response += part["text"]
+        print(f"\n{label} Output:")
+        print(full_response)
+    except Exception as e:
+        print(f"Error parsing {label} response: {e}")
+        return None
+
     normalized = normalize_response(full_response)
     if normalized:
         return normalized
-    # fallback: remove surrounding braces/brackets and return cleaned
-    cleaned = re.sub(r'^[\{\[]+|[\}\]]+$', '', full_response or '').strip()
+    cleaned = re.sub(r"^[\{\[]+|[\}\]]+$", "", full_response or "").strip()
     return cleaned or None
+
+
+# Keep old names as thin aliases for backward compatibility
+def call_gen1(input_text: str) -> Optional[str]:
+    return call_gemini(GEN1_MODEL, GEN1_API_KEY, input_text, label="Gen1")
 
 
 def call_gen2(input_text: str) -> Optional[str]:
-    """Final fallback: Use Gen2 (Gemini 2.5) to generate a response."""
-    API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEN2_MODEL}:streamGenerateContent"
-
-    headers = {
-        'Content-Type': 'application/json',
-        'X-goog-api-key': GEN2_API_KEY
-    }
-
-    data = {
-        "contents": [
-            {
-                "role": "user",
-                "parts": [
-                    {"text": f"Input: {input_text}\nRespond in a short, friendly tone (1-2 lines)."}
-                ]
-            }
-        ],
-        "generationConfig": {
-            "temperature": 1.35,
-            "thinkingConfig": {"thinkingBudget": 0},
-            "responseMimeType": "application/json"
-        },
-        "systemInstruction": {
-            "parts": [
-                {"text": "Short, casual chat-like replies. Output only the reply text, one or two lines max."}
-            ]
-        }
-    }
-
-    try:
-        response = requests.post(API_URL, headers=headers, json=data, stream=True, timeout=30)
-    except Exception as e:
-        print(f"Gen2 request error: {e}")
-        return None
-
-    full_response = ""
-    if response.status_code == 200:
-        buffer = ""
-        for line in response.iter_lines():
-            if line:
-                line_text = line.decode('utf-8')
-                buffer += line_text
-
-        try:
-            chunks = json.loads(buffer)
-            for chunk in chunks:
-                if 'candidates' in chunk and len(chunk['candidates']) > 0:
-                    if 'content' in chunk['candidates'][0]:
-                        parts = chunk['candidates'][0]['content'].get('parts', [])
-                        for part in parts:
-                            if 'text' in part:
-                                full_response += part['text']
-            print("\nGen2 Output:")
-            print(full_response)
-        except Exception as e:
-            print(f"Error parsing Gen2 response: {e}")
-            return None
-    else:
-        print(f"Gen2 Error: {response.status_code}")
-        print(response.text)
-        return None
-
-    # Normalize the response to plain text
-    normalized = normalize_response(full_response)
-    if normalized:
-        return normalized
-    cleaned = re.sub(r'^[\{\[]+|[\}\]]+$', '', full_response or '').strip()
-    return cleaned or None
+    return call_gemini(GEN2_MODEL, GEN2_API_KEY, input_text, label="Gen2")
 
 
 def normalize_response(raw: Optional[str]) -> Optional[str]:
