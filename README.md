@@ -35,11 +35,7 @@
 
 </div>
 
----
-
-> **Ana** is a Discord bot that talks back, cracks jokes, and occasionally says something profound.
-> Built at some ungodly hour with Python, three AI APIs, and the sheer willpower to not ship another "Hello World" bot.
-> She's witty, she's wired up to Llama-4, and she will never, *ever* let a dad joke opportunity pass.
+# Ana
 
 ---
 
@@ -58,17 +54,15 @@
 
 ---
 
-## &#x1F3AC; Live Demo
+> **Ana** is a Discord bot that talks back, cracks jokes, and occasionally says something profound.
+> Built at some ungodly hour with Python, three AI APIs, and the sheer willpower to not ship another "Hello World" bot.
+> She's witty, she's wired up to Llama-4, and she will never, *ever* let a dad joke opportunity pass.
 
-> **Place demo GIF here:** `assets/demo.gif`
+<div align="center">
 
-![Demo](assets/demo.gif)
+![Humor](https://media.giphy.com/media/077i6AULCXc0FKTj9s/giphy.gif)
 
-*Suggested GIF content:*
-- *Ana responding to a trigger word in a Discord channel*
-- *The fallback chain kicking in when Groq has an existential crisis*
-- *`!joke` command dropping a certified banger*
-- *Terminal output showing the AI reply pipeline in action*
+</div>
 
 ---
 
