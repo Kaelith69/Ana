@@ -1,0 +1,113 @@
+<svg width="820" height="400" viewBox="0 0 820 400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="dfA" markerWidth="9" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 9 3, 0 6" fill="#06B6D4"/>
+    </marker>
+    <marker id="dfAP" markerWidth="9" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 9 3, 0 6" fill="#7C3AED"/>
+    </marker>
+    <marker id="dfAB" markerWidth="9" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 9 3, 0 6" fill="#2563EB"/>
+    </marker>
+    <marker id="dfAG" markerWidth="9" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 9 3, 0 6" fill="#64748B"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="820" height="400" rx="14" fill="#0F0F1A"/>
+
+  <!-- Title -->
+  <text x="410" y="26" font-family="'Segoe UI', Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle" fill="#E2E8F0">Message Processing Flow</text>
+
+  <!-- Step 1: User Message -->
+  <rect x="30" y="50" width="130" height="52" rx="8" fill="#7C3AED"/>
+  <text x="95" y="72" font-family="monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="white">User Message</text>
+  <text x="95" y="88" font-family="monospace" font-size="9" text-anchor="middle" fill="rgba(255,255,255,0.75)">Discord on_message</text>
+
+  <!-- Arrow 1→2 -->
+  <line x1="160" y1="76" x2="196" y2="76" stroke="#06B6D4" stroke-width="2" marker-end="url(#dfA)"/>
+
+  <!-- Step 2: Bot Filter -->
+  <rect x="196" y="50" width="140" height="52" rx="8" fill="#1E1E2E" stroke="#06B6D4" stroke-width="1.5"/>
+  <text x="266" y="72" font-family="monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#06B6D4">Bot Filter</text>
+  <text x="266" y="88" font-family="monospace" font-size="9" text-anchor="middle" fill="#94A3B8">ignore self-messages</text>
+
+  <!-- Arrow 2→3 -->
+  <line x1="336" y1="76" x2="370" y2="76" stroke="#06B6D4" stroke-width="2" marker-end="url(#dfA)"/>
+
+  <!-- Step 3: Trigger Check (diamond) -->
+  <polygon points="410,50 460,76 410,102 360,76" fill="#2563EB" opacity="0.9"/>
+  <text x="410" y="73" font-family="monospace" font-size="9" font-weight="bold" text-anchor="middle" fill="white">Trigger</text>
+  <text x="410" y="86" font-family="monospace" font-size="9" text-anchor="middle" fill="white">Word?</text>
+
+  <!-- YES → NLP Pipeline -->
+  <line x1="460" y1="76" x2="510" y2="76" stroke="#06B6D4" stroke-width="2" marker-end="url(#dfA)"/>
+  <text x="484" y="68" font-family="monospace" font-size="9" fill="#06B6D4">YES</text>
+
+  <!-- NLP Pipeline box -->
+  <rect x="510" y="50" width="160" height="52" rx="8" fill="#1E1E2E" stroke="#7C3AED" stroke-width="1.8"/>
+  <text x="590" y="70" font-family="monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#7C3AED">NLP Pipeline</text>
+  <text x="590" y="86" font-family="monospace" font-size="9" text-anchor="middle" fill="#94A3B8">asyncio.to_thread()</text>
+
+  <!-- NO → down to maybe_joke -->
+  <line x1="410" y1="102" x2="410" y2="174" stroke="#2563EB" stroke-width="1.8" marker-end="url(#dfAB)"/>
+  <text x="418" y="140" font-family="monospace" font-size="9" fill="#2563EB">NO</text>
+
+  <!-- AI fallback chain below NLP -->
+  <!-- Groq -->
+  <rect x="510" y="130" width="80" height="42" rx="6" fill="#7C3AED" opacity="0.9"/>
+  <text x="550" y="148" font-family="monospace" font-size="10" font-weight="bold" text-anchor="middle" fill="white">Groq</text>
+  <text x="550" y="163" font-family="monospace" font-size="8" text-anchor="middle" fill="rgba(255,255,255,0.8)">Llama-4</text>
+  <line x1="590" y1="102" x2="550" y2="130" stroke="#7C3AED" stroke-width="1.5" marker-end="url(#dfAP)"/>
+
+  <!-- Gemini Gen1 -->
+  <rect x="604" y="130" width="80" height="42" rx="6" fill="#2563EB" opacity="0.85"/>
+  <text x="644" y="148" font-family="monospace" font-size="10" font-weight="bold" text-anchor="middle" fill="white">Gemini</text>
+  <text x="644" y="163" font-family="monospace" font-size="8" text-anchor="middle" fill="rgba(255,255,255,0.8)">Gen1</text>
+  <line x1="590" y1="102" x2="644" y2="130" stroke="#2563EB" stroke-width="1.2" stroke-dasharray="3,2" marker-end="url(#dfAB)"/>
+
+  <!-- Gemini Gen2 -->
+  <rect x="700" y="130" width="86" height="42" rx="6" fill="#06B6D4" opacity="0.85"/>
+  <text x="743" y="148" font-family="monospace" font-size="10" font-weight="bold" text-anchor="middle" fill="white">Gemini</text>
+  <text x="743" y="163" font-family="monospace" font-size="8" text-anchor="middle" fill="rgba(255,255,255,0.8)">Gen2</text>
+  <line x1="590" y1="102" x2="743" y2="130" stroke="#06B6D4" stroke-width="1.2" stroke-dasharray="3,2" marker-end="url(#dfA)"/>
+
+  <!-- Fallback static -->
+  <rect x="604" y="196" width="182" height="30" rx="5" fill="#1E1E2E" stroke="#64748B" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="695" y="215" font-family="monospace" font-size="9" text-anchor="middle" fill="#64748B">"Cool story, bro." (static)</text>
+  <line x1="743" y1="172" x2="743" y2="196" stroke="#64748B" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#dfAG)"/>
+  <line x1="590" y1="196" x2="604" y2="211" stroke="#64748B" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#dfAG)"/>
+
+  <!-- maybe_send_joke box -->
+  <rect x="280" y="174" width="170" height="52" rx="8" fill="#1E1E2E" stroke="#06B6D4" stroke-width="1.8"/>
+  <text x="365" y="196" font-family="monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#06B6D4">maybe_send_joke()</text>
+  <text x="365" y="212" font-family="monospace" font-size="9" text-anchor="middle" fill="#94A3B8">15% chance · 60s cool · max 3/day</text>
+
+  <!-- Arrow: maybe_joke → joke API -->
+  <line x1="365" y1="226" x2="365" y2="260" stroke="#06B6D4" stroke-width="1.5" marker-end="url(#dfA)"/>
+
+  <!-- Joke API -->
+  <rect x="256" y="260" width="218" height="38" rx="6" fill="#1E1E2E" stroke="#06B6D4" stroke-width="1.2" stroke-dasharray="5,3"/>
+  <text x="365" y="280" font-family="monospace" font-size="10" font-weight="bold" text-anchor="middle" fill="#06B6D4">icanhazdadjoke.com</text>
+  <text x="365" y="293" font-family="monospace" font-size="8" text-anchor="middle" fill="#64748B">HTTP GET · Accept: application/json</text>
+
+  <!-- Bot reply output -->
+  <rect x="256" y="326" width="218" height="48" rx="8" fill="#7C3AED"/>
+  <text x="365" y="348" font-family="monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="white">Bot Sends Reply</text>
+  <text x="365" y="364" font-family="monospace" font-size="9" text-anchor="middle" fill="rgba(255,255,255,0.8)">channel.send(reply)</text>
+
+  <!-- Arrow: joke API → reply -->
+  <line x1="365" y1="298" x2="365" y2="326" stroke="#06B6D4" stroke-width="1.5" marker-end="url(#dfA)"/>
+
+  <!-- Arrow: NLP result → reply (curved via right side) -->
+  <path d="M 590 226 Q 590 306 474 340" stroke="#7C3AED" stroke-width="1.5" stroke-dasharray="5,3" fill="none" marker-end="url(#dfAP)"/>
+
+  <!-- Legend -->
+  <line x1="30" y1="390" x2="55" y2="390" stroke="#06B6D4" stroke-width="2"/>
+  <text x="60" y="394" font-family="monospace" font-size="9" fill="#64748B">primary path</text>
+  <line x1="150" y1="390" x2="175" y2="390" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <text x="180" y="394" font-family="monospace" font-size="9" fill="#64748B">fallback</text>
+  <line x1="250" y1="390" x2="275" y2="390" stroke="#7C3AED" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="280" y="394" font-family="monospace" font-size="9" fill="#64748B">AI → Discord</text>
+</svg>
