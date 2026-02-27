@@ -1,0 +1,50 @@
+<svg width="820" height="230" viewBox="0 0 820 230" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="820" height="230" rx="14" fill="#0F0F1A"/>
+
+  <!-- Title -->
+  <text x="410" y="26" font-family="'Segoe UI', Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle" fill="#E2E8F0">Ana — Runtime Stats</text>
+
+  <!-- Card 1: Avg reply time -->
+  <rect x="20" y="40" width="148" height="100" rx="8" fill="#1E1E2E" stroke="#7C3AED" stroke-width="1.5"/>
+  <text x="94" y="80" font-family="monospace" font-size="26" font-weight="bold" text-anchor="middle" fill="#7C3AED">~400ms</text>
+  <text x="94" y="100" font-family="monospace" font-size="9" text-anchor="middle" fill="#94A3B8">Avg Groq reply latency</text>
+  <text x="94" y="114" font-family="monospace" font-size="8" text-anchor="middle" fill="#475569">(network + inference)</text>
+  <text x="94" y="128" font-family="monospace" font-size="8" text-anchor="middle" fill="#475569">varies by API load</text>
+
+  <!-- Card 2: Fallback layers -->
+  <rect x="184" y="40" width="148" height="100" rx="8" fill="#1E1E2E" stroke="#2563EB" stroke-width="1.5"/>
+  <text x="258" y="80" font-family="monospace" font-size="26" font-weight="bold" text-anchor="middle" fill="#2563EB">3</text>
+  <text x="258" y="100" font-family="monospace" font-size="9" text-anchor="middle" fill="#94A3B8">AI fallback layers</text>
+  <text x="258" y="114" font-family="monospace" font-size="8" text-anchor="middle" fill="#475569">Groq → Gen1 → Gen2</text>
+  <text x="258" y="128" font-family="monospace" font-size="8" text-anchor="middle" fill="#475569">+ static last resort</text>
+
+  <!-- Card 3: Trigger words -->
+  <rect x="348" y="40" width="148" height="100" rx="8" fill="#1E1E2E" stroke="#06B6D4" stroke-width="1.5"/>
+  <text x="422" y="80" font-family="monospace" font-size="26" font-weight="bold" text-anchor="middle" fill="#06B6D4">70+</text>
+  <text x="422" y="100" font-family="monospace" font-size="9" text-anchor="middle" fill="#94A3B8">Trigger keywords</text>
+  <text x="422" y="114" font-family="monospace" font-size="8" text-anchor="middle" fill="#475569">5 languages</text>
+  <text x="422" y="128" font-family="monospace" font-size="8" text-anchor="middle" fill="#475569">greetings + emotions + events</text>
+
+  <!-- Card 4: Max jokes/day -->
+  <rect x="512" y="40" width="148" height="100" rx="8" fill="#1E1E2E" stroke="#7C3AED" stroke-width="1.5"/>
+  <text x="586" y="80" font-family="monospace" font-size="26" font-weight="bold" text-anchor="middle" fill="#7C3AED">3/day</text>
+  <text x="586" y="100" font-family="monospace" font-size="9" text-anchor="middle" fill="#94A3B8">Max jokes per channel</text>
+  <text x="586" y="114" font-family="monospace" font-size="8" text-anchor="middle" fill="#475569">15% trigger chance</text>
+  <text x="586" y="128" font-family="monospace" font-size="8" text-anchor="middle" fill="#475569">60s cooldown</text>
+
+  <!-- Card 5: Dependencies -->
+  <rect x="676" y="40" width="124" height="100" rx="8" fill="#1E1E2E" stroke="#2563EB" stroke-width="1.5"/>
+  <text x="738" y="80" font-family="monospace" font-size="26" font-weight="bold" text-anchor="middle" fill="#2563EB">5</text>
+  <text x="738" y="100" font-family="monospace" font-size="9" text-anchor="middle" fill="#94A3B8">pip dependencies</text>
+  <text x="738" y="114" font-family="monospace" font-size="8" text-anchor="middle" fill="#475569">discord.py · flask</text>
+  <text x="738" y="128" font-family="monospace" font-size="8" text-anchor="middle" fill="#475569">groq · dotenv · requests</text>
+
+  <!-- Tech notes banner -->
+  <rect x="20" y="156" width="780" height="58" rx="8" fill="#1E1E2E" stroke="#2563EB" stroke-width="1" stroke-opacity="0.5"/>
+  <text x="36" y="178" font-family="monospace" font-size="10" fill="#94A3B8">⚡  Single Groq client instance  ·  async/await throughout  ·  asyncio.to_thread() for blocking AI calls</text>
+  <text x="36" y="198" font-family="monospace" font-size="10" fill="#94A3B8">🌐  Flask keepalive on :8080  ·  cloud-hosted (Railway / Render / Replit)  ·  stateless across restarts</text>
+
+  <!-- Bottom accent -->
+  <text x="410" y="222" font-family="monospace" font-size="9" text-anchor="middle" fill="#475569">~250 lines of Python · 1 entry point · 0 databases · pure event-driven</text>
+</svg>
