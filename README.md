@@ -4,15 +4,15 @@
 
 </div>
 
-**Your Discord bot. Powered by AI. Armed with dad jokes. Dangerous.**
+**Your Discord bot. Powered by AI. Indistinguishable from a real member. Dangerous.**
 
-[Features](#-features) • [Installation](#-installation) • [Usage](#-usage) • [Architecture](#%EF%B8%8F-architecture) • [Roadmap](#%EF%B8%8F-roadmap) • [License](#-license)
+[Features](#-features) • [Commands](#-commands) • [Installation](#-installation) • [Usage](#-usage) • [Architecture](#%EF%B8%8F-architecture) • [Raspberry Pi](#-raspberry-pi-autostart) • [Roadmap](#%EF%B8%8F-roadmap) • [License](#-license)
 
 ---
 
-*I built Ana because I was tired of Discord bots that either do too much or say nothing interesting. She has one job: show up, generate a half-decent AI reply, and occasionally derail a serious conversation with a pun about cheese. It turns out that's exactly the right amount of bot.*
+*Ana started as a simple AI reply bot. She's grown into something that regularly fools people into thinking there's a real, very online, chaotic 20-something in the server. She has opinions. She fires back when insulted. She flirts. She gets distracted mid-thought. She's the bit.*
 
-Ana is a Python Discord bot wired to three AI backends — Groq Llama-4 as the primary engine, with dual Gemini Flash Lite fallbacks so she keeps talking even when one API has a bad day. She scans every message for 70+ trigger words (greetings, moods, slang, multilingual phrases) and fires off a reply via `asyncio.to_thread` so the event loop never blocks. On untriggered messages she has a configurable 15% chance of dropping a live-fetched dad joke. A Flask keepalive on port 8080 lets uptime monitors confirm she hasn't rage-quit.
+Ana is a Python Discord bot wired to three AI backends — Groq Llama-4 as the primary engine, with dual Gemini Flash fallbacks. She's built to be indistinguishable from a human server member: proportional typing delays, occasional typo-then-correction, a distinct roast mode that bypasses all cooldowns when someone's being rude, a flirt mode with improvised NSFW-capable pick-up lines, emoji reactions, unprompted follow-up messages, and a conversation history window so she remembers what was just said. On untriggered messages she has a configurable 15% chance of dropping a live-fetched dad joke. A Flask keepalive on port 8080 keeps her alive on any hosting platform.
 
 ---
 
@@ -33,21 +33,21 @@ Ana is a Python Discord bot wired to three AI backends — Groq Llama-4 as the p
 
 ## 🧠 System Overview
 
-Ana is structured as a single async Python process: `main.py` owns the Discord client and routes incoming events; `nlp.py` runs the AI reply pipeline in a thread pool; `jokes.py` manages the dad-joke lifecycle with cooldown and daily cap; `keepalive.py` runs Flask in a background thread; and `config.py` loads everything from `.env` at startup.
+Ana is structured as a single async Python process: `main.py` owns the Discord client and routes all events; `nlp.py` runs the AI reply pipeline (with per-mode prompts and a deterministic `post_process()` that strips every AI artefact); `jokes.py` manages the dad-joke lifecycle; `keepalive.py` runs Flask in a daemon thread; and `config.py` loads everything from `.env` at startup.
 
 ```
 Ana/
-├── main.py          # Discord client, on_message, commands (!joke, !shutdown)
-├── nlp.py           # AI pipeline: Groq → Gemini Gen1 → Gemini Gen2 → static
-├── jokes.py         # DadJokeService: live fetch, 60s cooldown, 3/day cap
-├── config.py        # .env loader, JokeSettings dataclass, TRIGGER_WORDS tuple
-├── keepalive.py     # Flask GET / → "Bot is alive!" on :8080
-├── requirements.txt # 5 pip dependencies
-├── assets/          # SVG diagrams referenced by this README
-└── wiki/            # Extended documentation
+├── main.py             # Discord client, on_message, commands (!joke, !shutdown)
+├── nlp.py              # AI pipeline: Groq → Gemini Gen1 → Gemini Gen2 → static
+├── jokes.py            # DadJokeService: live fetch, 60s cooldown, 3/day cap
+├── config.py           # .env loader, JokeSettings, TRIGGER/ROAST/FLIRT_WORDS
+├── keepalive.py        # Flask GET / → "Bot is alive!" on :8080
+├── requirements.txt    # 5 pip dependencies
+├── .env.example        # Template — copy to .env and fill in your keys
+├── setup_autostart.sh  # One-shot Raspberry Pi systemd setup script
+├── assets/             # SVG diagrams referenced by this README
+└── wiki/               # Extended documentation
 ```
-
-See the full architectural diagram below.
 
 ---
 
@@ -56,13 +56,18 @@ See the full architectural diagram below.
 | Feature | What it actually does |
 |---|---|
 | 🤖 **AI Replies** | Trigger-word scan → `asyncio.to_thread` → Groq Llama-4 generates a short, casual reply without blocking the event loop |
-| 🔄 **Fallback Chain** | Groq times out or errors? Gemini Flash Lite Gen1 takes over. That fails? Gen2. That fails? Static string. Zero silent failures. |
-| 😂 **Dad Jokes** | Live HTTP GET to `icanhazdadjoke.com` on untriggered messages. 15% roll, 60s cooldown, max 3 per day per channel. |
-| 🎯 **70+ Trigger Words** | Greetings, emotions, celebrations, cultural holidays, and slang — including Hindi, Spanish, French, and Arabic phrases |
-| ⚙️ **Fully Configurable** | `JOKE_CHANCE`, `JOKE_COOLDOWN`, `JOKE_FETCH_TIMEOUT`, all API keys — every runtime value overridable via `.env` |
-| 🌐 **Keepalive Server** | Flask endpoint at `GET /` returns `Bot is alive!` so Railway/Render/UptimeRobot don't think she's gone dark |
-| 🛑 **`!shutdown`** | Owner-only. Prints a four-line dramatic farewell sequence with 1.5s pauses, then closes cleanly. |
-| 🎤 **`!joke`** | Force-fetches a dad joke on demand, bypassing the probability and cooldown. Use sparingly. |
+| 🔄 **Triple Fallback** | Groq down? → Gemini Flash Gen1. That down? → Gemini Flash Gen2. All fail? → human-sounding static fallback. Zero silent failures. |
+| 🔥 **Roast Mode** | Insult or mock her and she fires back instantly — bypasses all cooldowns, fast angry typing (0.4–1.2s), 25% chance of a follow-up cutting remark |
+| 💘 **Flirt Mode** | Flirt with her and she responds with an improvised, original pick-up line — bold, cheeky, NSFW-capable; never the same tired one-liners |
+| 🎭 **Human Behaviour** | Proportional typing delays • occasional typo + star-correction • emoji-only reactions (12% of the time) • unprompted follow-up afterthoughts • conversation history window |
+| 🧹 **AI Artefact Stripping** | `post_process()` deterministically removes markdown, AI opener phrases ("Sure,", "Of course,"), trailing periods, and capital first letters from every reply |
+| 💬 **Conversation History** | Per-channel sliding window of last 10 messages passed as context to every AI call — she remembers what was just said |
+| 😂 **Dad Jokes** | Live HTTP GET to `icanhazdadjoke.com` on untriggered messages. 15% roll, 60s cooldown, max 3 per day per channel |
+| 🎯 **100+ Trigger Words** | Greetings, emotions, celebrations, cultural holidays, Gen-Z slang, multilingual phrases, roast words, and flirt words — all configurable |
+| ⚙️ **Fully Configurable** | `JOKE_CHANCE`, `JOKE_COOLDOWN`, `SYSTEM_PROMPT`, all API keys — every runtime value overridable via `.env` |
+| 🌐 **Keepalive Server** | Flask endpoint at `GET /` returns `Bot is alive!` so Railway/Render/UptimeRobot health checks pass |
+| 🔒 **Cooldown System** | Per-user 25s cooldown + per-channel 7s cooldown prevent spam; roasts always go through regardless |
+| 🍓 **Raspberry Pi Ready** | `setup_autostart.sh` installs a systemd service in one command — auto-starts on every reboot, waits for network, restarts on crash |
 
 ---
 
@@ -73,6 +78,35 @@ See the full architectural diagram below.
 ![Ana capabilities](assets/capabilities.svg)
 
 </div>
+
+---
+
+## 💬 Commands
+
+Ana uses the `!` prefix for explicit commands.
+
+| Command | Who | What happens |
+|---|---|---|
+| `!joke` | Everyone | Live-fetches a fresh dad joke from `icanhazdadjoke.com`, bypassing cooldown and daily cap |
+| `!shutdown` | Bot owner only | Ana says a quick casual goodbye, then closes cleanly |
+
+### `!joke` example
+```
+You:  !joke
+Ana:  Why don't scientists trust atoms? Because they make up everything.
+```
+
+### `!shutdown` example
+```
+You:  !shutdown
+Ana:  okay fine i'm going
+Ana:  don't miss me too much lol
+Ana:  bye i guess 💀
+Ana:  ...
+[Bot goes offline]
+```
+
+> **Who is the bot owner?** The Discord account that created the application in the Developer Portal. `discord.py`'s `@commands.is_owner()` handles this automatically — no config needed.
 
 ---
 
@@ -102,16 +136,31 @@ Primary data path through a triggered message:
 
 ```
 Discord on_message
-  └─ content.lower() checked against TRIGGER_WORDS tuple
-       ├─ MATCH → asyncio.to_thread(process_with_nlp, content)
-       │            ├─ Groq(Llama-4)       → reply  ✓ done
-       │            ├─ Gemini Gen1         → reply  ✓ done (if Groq failed)
-       │            ├─ Gemini Gen2         → reply  ✓ done (if Gen1 failed)
-       │            └─ "Cool story, bro."  → reply  (all APIs failed)
-       │          └─ channel.send(reply)
-       └─ NO MATCH → maybe_send_joke()
-                       ├─ random() > 0.15 or cooldown active → skip
-                       └─ GET icanhazdadjoke.com → channel.send(joke)
+  └─ Ignore bots / handle ! commands
+       └─ Detect is_roast / is_flirt / is_trigger
+            │
+            ├─ ROAST ──► bypass ALL cooldowns
+            │              → process_with_nlp(roast=True)    [temp 1.3/1.4]
+            │              → post_process() strips AI artefacts
+            │              → fast reply (0.4–1.2s typing delay)
+            │              → 25% chance of _ROAST_FOLLOWUPS
+            │
+            ├─ FLIRT ──► normal cooldowns apply
+            │              → process_with_nlp(flirt=True)
+            │              → post_process()
+            │              → 20% chance of _FLIRT_FOLLOWUPS
+            │
+            ├─ TRIGGER ► cooldown checks
+            │    ├─ 12% chance → emoji reaction only
+            │    ├─ 4%  chance → send with typo → send *correction
+            │    └─ process_with_nlp()  [Groq → Gemini Gen1 → Gen2 → static]
+            │              → post_process()
+            │              → proportional typing delay (0.8–5.0s)
+            │              → 8% chance of _FOLLOWUPS
+            │
+            └─ NO TRIGGER → maybe_send_joke()
+                              ├─ cooldown / rand / daily-cap → skip
+                              └─ GET icanhazdadjoke.com → channel.send(joke)
 ```
 
 ---
@@ -120,10 +169,10 @@ Discord on_message
 
 ### Prerequisites
 
-- **Python 3.10+** — `asyncio.to_thread` requires 3.9+; 3.10+ recommended for match-statement compatibility if you extend Ana
-- **Discord bot token** — [Discord Developer Portal](https://discord.com/developers/applications). Enable "Message Content Intent" or she can't read messages.
-- **Groq API key** — [console.groq.com](https://console.groq.com). Free tier works. Ana uses `llama-4-scout-17b-16e-instruct`.
-- **Google AI API key(s)** — [aistudio.google.com](https://aistudio.google.com). Two separate keys (`GEN1_API_KEY`, `GEN2_API_KEY`) for the two Gemini fallbacks. You can use the same key value for both if you're fine with them sharing quota — just set both variables to the same string in `.env`.
+- **Python 3.10+** — check with `python --version`
+- **Discord bot token** — [Discord Developer Portal](https://discord.com/developers/applications). Enable **Message Content Intent** or Ana can't read messages.
+- **Groq API key** — [console.groq.com](https://console.groq.com). Free tier works. Uses `llama-4-scout-17b-16e-instruct`.
+- **Google AI API key(s)** — [aistudio.google.com](https://aistudio.google.com). Two keys for fallbacks (`GEN1_API_KEY`, `GEN2_API_KEY`). You can use the same value for both to share quota.
 
 ### Steps
 
@@ -133,70 +182,111 @@ Discord on_message
    cd Ana
    ```
 
-2. Install dependencies (5 packages — `discord.py`, `flask`, `groq`, `python-dotenv`, `requests`):
+2. Create a virtual environment and install dependencies:
    ```bash
+   python -m venv .venv
+   source .venv/bin/activate   # Linux / macOS / Raspberry Pi
+   .venv\Scripts\activate      # Windows
    pip install -r requirements.txt
    ```
 
-3. Create your `.env`:
+3. Create your `.env` from the provided template:
    ```bash
-   cp .env.example .env   # or create it manually
+   cp .env.example .env
    ```
 
-4. Fill in `.env`:
+4. Fill in `.env` — open it and replace the placeholder values:
    ```env
-   # Required
    DISCORD_TOKEN=your_discord_bot_token_here
    GROQ_API_KEY=your_groq_api_key_here
-
-   # Optional — Gemini fallbacks (bot works without them, just noisier failures)
-   GEN1_API_KEY=your_gemini_gen1_api_key_here
-   GEN2_API_KEY=your_gemini_gen2_api_key_here
-
-   # Optional tuning (defaults shown)
-   JOKE_CHANCE=0.15          # 0.0-1.0 probability per untriggered message
-   JOKE_COOLDOWN=60          # Seconds between jokes in the same channel
-   JOKE_FETCH_TIMEOUT=8      # HTTP timeout for icanhazdadjoke.com
+   GEN1_API_KEY=your_gemini_api_key_here
+   GEN2_API_KEY=your_gemini_api_key_here   # can be the same key as GEN1
    ```
 
 5. Run:
    ```bash
    python main.py
    ```
+   You should see: `✅ Logged in as Ana#1234`
 
-> **Pro tip:** If you're hosting on Railway or Render, set env vars in their dashboard rather than a `.env` file. The keepalive server on `:8080` will automatically satisfy their health-check requirements without any extra config.
+---
+
+## 🍓 Raspberry Pi Autostart
+
+Run Ana automatically on every reboot with one command. The included `setup_autostart.sh` script handles the entire setup — virtual environment, dependencies, and a systemd service that starts after the network is ready and auto-restarts on crash.
+
+```bash
+chmod +x setup_autostart.sh && ./setup_autostart.sh
+```
+
+**After setup:**
+```bash
+journalctl -u ana-bot -f          # live logs
+sudo systemctl restart ana-bot    # after code changes
+sudo systemctl stop ana-bot       # take her offline
+sudo systemctl disable ana-bot    # remove from autostart
+```
+
+> **Requirements:** Raspberry Pi OS (or any Debian-based distro), Python 3.10+, an `.env` file with your keys in the repo directory.
+
+---
 
 ---
 
 ## 📖 Usage
 
-### Primary workflow
+### Getting started
 
 1. Add Ana to your server with `bot` scope and `Send Messages` + `Read Message History` permissions
-2. Make sure **Message Content Intent** is enabled in the Developer Portal (Applications → Bot → Privileged Gateway Intents)
-3. Say anything containing a trigger word — Ana replies within ~400ms on a good day
-4. Watch her silently judge untriggered messages and occasionally drop a pun
+2. Enable **Message Content Intent** in the Developer Portal (Applications → Bot → Privileged Gateway Intents)
+3. Say anything containing a trigger word — Ana replies within ~1 second on a good day
+4. Insult her and see what happens
 
-### Commands
+### Trigger word categories
 
-| Command | Who can use it | What happens |
-|---|---|---|
-| `!joke` | Everyone | Live-fetches a dad joke, bypasses cooldown and daily cap |
-| `!shutdown` | Bot owner only | Four-line dramatic farewell → `bot.close()` → `sys.exit(0)` |
-
-### Trigger words
-
+**General triggers** (greetings, moods, slang):
 ```
 ana · hello · hi · hey · yo · sup
-morning · gm · gn · goodmorning · goodnight · afternoon · evening
+morning · gm · gn · afternoon · evening · goodnight
 namaste · hola · bonjour
-happy · sad · tired · angry · bored · excited
+sad · happy · tired · angry · bored · excited
 lmao · omg · wow · bruh
-birthday · hbd · congrats · congratulations · bestwishes
-wedding · engagement · diwali · christmas · eid · newyear · valentines
-bye · goodbye · cya · later · seeya
-... and ~30 more in config.py
 ```
+
+**Celebration triggers:**
+```
+birthday · hbd · congrats · congratulations
+wedding · engagement · diwali · christmas · eid
+newyear · valentines · babyshower · getwellsoon
+```
+
+**Roast triggers** (activate comeback mode — she always fires back):
+```
+stupid · idiot · dumb · trash · useless · mid · cringe · loser
+skill issue · cooked · npc · flop · delulu · cope · ratio
+touch grass · take the L · who asked · nobody asked · get rekt
+... and 30+ more in config.py
+```
+
+**Flirt triggers** (activate flirt mode):
+```
+cute · pretty · hot · gorgeous · sexy · crush · rizz · babe
+kiss · love you · wanna go out · be mine · dream girl
+... and more in config.py
+```
+
+### Behaviour nuances
+
+- **Roasts bypass all cooldowns** — if you insult her, she replies no matter what
+- **12% chance of emoji-only reaction** instead of a text reply on non-roast triggers
+- **4% chance of typo + correction** — sends with a swap-typo then follows with `*word`
+- **Proportional typing delay** — short replies feel fast, long ones feel like she's actually typing
+- **Conversation history** — last 10 messages per channel included as context in every AI call
+- **Follow-up afterthoughts** — 8% chance she sends a rambling follow-up 4–8 seconds later
+
+### Cloud deployment
+
+> If you're hosting on Railway or Render, set env vars in their dashboard. The keepalive server on `:8080` satisfies their health-check requirements automatically.
 
 > **Pro tip:** Add your server's memes or nicknames to `TRIGGER_WORDS` in `config.py`. The tuple is evaluated once at startup, so a restart is all it takes.
 

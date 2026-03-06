@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Something's broken. Let's fix it. No judgment — we've all been there.
+Something's broken. Let's fix it.
 
 ---
 
@@ -8,7 +8,7 @@ Something's broken. Let's fix it. No judgment — we've all been there.
 
 **Check 1: Is the bot online?**
 
-Look for Ana in your server's member list. If she's showing as offline, the process isn't running or crashed on startup.
+Look for Ana in your server's member list. If she's offline, the process isn't running or crashed on startup.
 
 **Check 2: Did she log in successfully?**
 
@@ -17,17 +17,13 @@ Check your terminal/logs for:
 ✅ Logged in as Ana#1234
 ```
 
-If you don't see this, the bot failed to connect.
-
 **Check 3: Did you enable Message Content Intent?**
 
-Go to Discord Developer Portal → Your App → Bot → Privileged Gateway Intents.
+Discord Developer Portal → Your App → Bot → Privileged Gateway Intents → enable **Message Content Intent**. Without this, Ana is effectively blind — she sees message events but can't read the text.
 
-Enable **Message Content Intent**. Without this, the bot can see messages exist but can't read their text. Ana is effectively blind.
+**Check 4: Does the bot have permission to send messages?**
 
-**Check 4: Does the bot have permission to send messages in that channel?**
-
-Check channel permissions. Ana needs: `View Channel`, `Send Messages`, `Read Message History`.
+Ana needs `View Channel`, `Send Messages`, `Read Message History`, and `Add Reactions` in the channel.
 
 ---
 
@@ -35,69 +31,120 @@ Check channel permissions. Ana needs: `View Channel`, `Send Messages`, `Read Mes
 
 **Check 1: Are you using trigger words correctly?**
 
-Trigger words are detected anywhere in the message, case-insensitively. Test with something unambiguous:
-
+Trigger words are detected anywhere in the message, case-insensitively. Test with just:
 ```
 ana
 ```
 
-Just the word. Nothing else.
+**Check 2: She responds but the reply sounds very generic**
 
-**Check 2: Check your AI API keys**
-
-Without `GROQ_API_KEY`, Ana falls through to Gemini. Without Gemini keys either, she hits the static fallback — which should still respond.
-
-If she's responding with "Cool story, bro." or "Interesting..." — the static fallback is working but all AI APIs are failing. Check your keys and API console for errors.
-
-**Check 3: Check the terminal output**
-
-Ana logs AI pipeline output. Look for:
-```
-GROQ Output:
-[response text]
-```
-
-Or error messages like:
+If you're getting responses like `"idk what to say lol"` or `"wait what"` on every message, all AI APIs are failing and she's hitting the static fallback. Check your API keys and look at the terminal for:
 ```
 GROQ primary failed: ...
 Gen1 backup failed: ...
 Gen2 backup2 failed: ...
 ```
 
+**Check 3: Check the terminal for the model output**
+
+Ana prints every AI reply to stdout:
+```
+GROQ Output:
+[response text]
+```
+
+---
+
+## She's not firing back at insults / roast mode not triggering
+
+The roast word list is in `ROAST_WORDS` in `config.py`. Try a word that's definitely in there:
+```
+stupid
+```
+
+Note that roast detection uses `re.search` with `\b` word boundaries — `"stupidity"` won't trigger `"stupid"`. The exact word, or a phrase like `"nobody asked"`, must appear in the message.
+
+Also check: if the channel just had a non-roast message from her within 7 seconds, she waits on non-roast triggers — but roast always goes through.
+
 ---
 
 ## "DISCORD_TOKEN is missing" on startup
 
-You haven't set `DISCORD_TOKEN` in your `.env` file.
+You haven't set `DISCORD_TOKEN` in your `.env` file. The bot exits immediately.
 
 ```bash
 # In .env:
 DISCORD_TOKEN=your_actual_token_here
 ```
 
-If you're on a hosting platform (Railway, Render, Replit), set it in their environment variables UI — `.env` files often aren't used there.
+On Railway/Render/Replit, set it in their environment variables UI instead.
 
 ---
 
-## `!joke` returns "My humor banks are empty 😢"
+## `!joke` gives a non-human response / "idk any rn"
 
-The joke API (`icanhazdadjoke.com`) returned nothing — likely a timeout or rate limit.
-
-Try again in a moment. If it's consistently failing, check if the API is reachable from your host:
+The joke API (`icanhazdadjoke.com`) returned nothing — timeout or rate limit. Try again in a moment. Check reachability:
 
 ```bash
 curl -H "Accept: application/json" https://icanhazdadjoke.com/
 ```
 
-If that times out, your hosting provider may be blocking outbound HTTP on port 443.
+If it times out, your host may be blocking outbound HTTP/HTTPS.
 
 ---
 
 ## Groq API errors
 
-Common Groq errors and what they mean:
+Common Groq errors:
 
 | Error | Cause | Fix |
+|---|---|---|
+| `401 Unauthorized` | Invalid API key | Re-copy key from console.groq.com |
+| `429 Too Many Requests` | Rate limit hit | Wait — free tier has per-minute limits |
+| `connection timeout` | Network issue | Check connectivity; bot will fall through to Gemini |
+
+---
+
+## Gemini API errors
+
+| Error | Cause | Fix |
+|---|---|---|
+| `403 Forbidden` | Invalid or missing key | Re-copy from aistudio.google.com |
+| `400 Bad Request` | Malformed request | Check `GEN1_MODEL` / `GEN2_MODEL` values in `nlp.py` match current Gemini model names |
+| `429 Too Many Requests` | Quota exceeded | Free tier has daily limits; wait or upgrade |
+
+---
+
+## On Raspberry Pi: bot doesn't start after reboot
+
+**Check service status:**
+```bash
+sudo systemctl status ana-bot
+journalctl -u ana-bot -n 50 --no-pager
+```
+
+**Common causes:**
+- `.env` file missing — the script uses `EnvironmentFile=.env` which requires the file to exist
+- Network not ready — the service waits for `network-online.target` but on some Pi configs this resolves before WiFi is fully up. Add a `ExecStartPre=/bin/sleep 5` to the service file as a workaround.
+- Wrong working directory — ensure you ran `setup_autostart.sh` from the repo directory
+
+**Re-run setup if needed:**
+```bash
+./setup_autostart.sh
+```
+
+The script is idempotent — safe to run again.
+
+---
+
+## Ana replies sound too much like an AI
+
+`post_process()` in `nlp.py` strips most AI artefacts automatically (markdown, opener phrases, trailing periods, capital first letter). If you're still getting them:
+
+1. Check the raw model output in the terminal — is it coming in already stripped?
+2. Try overriding `SYSTEM_PROMPT` in `.env` with a stricter persona
+3. The system prompt hard-bans: `Sure,` `Of course,` `Certainly,` `Absolutely,` `Great,` `Happy to,` `I understand,` `That makes sense,` — if the model is using something else, add it to `_RE_AI_OPENER` in `nlp.py`
+
 |---|---|---|
 | `AuthenticationError` | Invalid or missing API key | Check `GROQ_API_KEY` in `.env` |
 | `RateLimitError` | Too many requests | Groq free tier has limits; wait or upgrade |

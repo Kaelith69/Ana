@@ -3,29 +3,39 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.pyc
 *.so
 .coverage
 .pytest_cache/
 *.egg-info/
+dist/
+build/
 
 # Environments
 .venv/
 venv/
+env/
 
 # Logs & local data
 *.log
 *.sqlite3
 
-# Secrets (never commit real keys)
+# Secrets — NEVER commit real keys or tokens
 .env
 .env.*
-!*.example
+!.env.example
 *.pem
+*.key
+*.p12
+secrets.json
+secrets.yaml
+secrets.yml
 
 # Project specific files
 dad_jokes.txt
 
 # OS/editor
 .DS_Store
+Thumbs.db
 .idea/
 .vscode/

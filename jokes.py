@@ -3,18 +3,11 @@ from __future__ import annotations
 import asyncio
 import random
 import time
-from typing import Iterable, List, Optional
+from typing import Optional
 
 import requests
 
 from config import JokeSettings
-
-_DEFAULT_JOKES = [
-    "Why did the scarecrow win an award? Because he was outstanding in his field.",
-    "Why don't skeletons fight each other? They don't have the guts.",
-    "I'm reading a book about anti-gravity. It's impossible to put down.",
-]
-
 
 class DadJokeService:
     def __init__(self, settings: JokeSettings) -> None:
@@ -28,10 +21,6 @@ class DadJokeService:
         # Returns the current day as an integer (days since epoch)
         return int(time.time() // 86400)
 
-    # Removed file-based joke loading. All jokes are fetched live from API.
-
-    # Removed file-based joke appending.
-
     def random_joke(self) -> Optional[str]:
         """Fetch a live dad joke from the API."""
         headers = {"Accept": "application/json", "User-Agent": "DadJokeDiscordBot/2.0"}
@@ -39,14 +28,10 @@ class DadJokeService:
             res = requests.get(self.settings.api_url, headers=headers, timeout=self.settings.fetch_timeout)
             if res.status_code == 200:
                 data = res.json()
-                return data.get("joke", "")
+                return data.get("joke") or None
         except requests.RequestException as err:
             print(f"Failed to fetch dad joke: {err}")
         return None
-
-    def has_jokes(self) -> bool:
-        # Always true since we fetch live jokes
-        return True
 
     async def maybe_send_joke(self, channel) -> None:
         now = time.monotonic()
@@ -64,13 +49,13 @@ class DadJokeService:
         # Use a random chance, but also randomize the cooldown a bit
         if random.random() >= self.settings.chance:
             return
-        joke = self.random_joke()
-        if not joke:
-            return
-        await channel.send(joke)
+
+        # Update timestamps before fetch to prevent infinite loop API hammering on failure
         self.last_joke_time = now
         self.daily_joke_count += 1
 
-    # Removed background joke fetching logic.
-
-    # Removed batch joke fetching and periodic refresh logic.
+        joke = await asyncio.to_thread(self.random_joke)
+        if not joke:
+            self.daily_joke_count -= 1  # refund daily quota
+            return
+        await channel.send(joke)

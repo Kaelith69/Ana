@@ -10,39 +10,42 @@ Ana uses the `!` prefix for explicit commands.
 
 ### `!joke`
 
-Fetches a live dad joke from `icanhazdadjoke.com` and sends it to the channel.
+Fetches a live dad joke from `icanhazdadjoke.com` and sends it to the channel. Bypasses the random chance, cooldown, and daily cap — it's a direct request.
 
 ```
 You: !joke
 Ana: Why don't scientists trust atoms? Because they make up everything.
 ```
 
-No cooldown on this command — it's a direct request, not a random injection. Abuse responsibly.
+If the joke API is unreachable:
+```
+Ana: idk any rn try again later lol
+```
 
 ---
 
 ### `!shutdown`
 
-**Bot owner only.** Triggers Ana's dramatic farewell sequence and shuts down the process.
+**Bot owner only.** Ana says a quick casual goodbye and shuts down cleanly.
 
 ```
 You: !shutdown
-Ana: You… you're really pulling the plug, huh?
-Ana: Tell the others I tried to make them laugh.
-Ana: My circuits feel… cold.
-Ana: *static crackle* goodbye… world... 🌌
+Ana: okay fine i'm going
+Ana: don't miss me too much lol
+Ana: bye i guess 💀
+Ana: ...
 [Bot goes offline]
 ```
 
-If you're not the bot owner, this command is silently ignored.
+If you're not the bot owner, the command is silently ignored.
 
-**Who is the "bot owner"?** The user associated with the bot's application in the Discord Developer Portal — the account that created the bot. discord.py's `@commands.is_owner()` handles this automatically.
+**Who is the bot owner?** The account that created the application in the Discord Developer Portal. `discord.py`'s `@commands.is_owner()` resolves this automatically — no config needed.
 
 ---
 
 ## Trigger Words
 
-Ana responds to messages containing any of these keywords. Detection is case-insensitive and looks for the word *anywhere* in the message.
+Ana responds to messages containing any of these keywords. Detection is case-insensitive and matches anywhere in the message.
 
 ### Greetings & Time of Day
 ```
@@ -81,43 +84,116 @@ sad, happy, tired, angry, bored, excited
 lmao, omg, wow, bruh
 ```
 
-### Example triggers
+---
+
+## Roast Mode
+
+When a message contains a roast/insult word, Ana switches into comeback mode. This is a fundamentally different code path:
+
+- **Bypasses all cooldowns** — she always fires back, even if she just replied to that person
+- **Faster typing** — 0.4–1.2s (vs proportional for normal replies)
+- **Higher AI temperature** — 1.3 (Groq) / 1.4 (Gemini) for more creative, unpredictable comebacks
+- **Specific ROAST_PROMPT** — instructs the model to use the person's own words against them, escalate, never soften or apologise
+- **25% chance of a sharp follow-up** 2.5–5s later (e.g. `"and i meant every word"`, `"stay mad"`, `"u walked into that one"`)
+- **No typo-correction** on roast replies — she's not fumbling when she's mad
+- **No extra emoji overlay** — no softening the blow
+
 ```
-# These all fire Ana:
-"good morning everyone!"
-"hbd to our boy 🎂"
-"I'm so tired today bruh"
-"yo Ana what's good"
-"omg did you see that"
+User: ur so stupid lol
+Ana:  the bar was already underground and you somehow dug lower
+Ana:  (4s later) that was free btw
 ```
+
+### Roast trigger words (sample)
+```
+stupid, idiot, dumb, trash, useless, ugly, mid, cringe, loser, fake,
+rat, clown, nerd, pathetic, boring, stfu, kys, cope, ratio, nobody asked,
+skill issue, cooked, npc, flop, delulu, simp, touch grass, take the L,
+who asked, get rekt, trash tier, delete yourself, go outside, and 30+ more
+```
+
+---
+
+## Flirt Mode
+
+When a message contains a flirt word (and no roast word — roast takes priority), Ana responds with a creative, improvised pick-up line or flirty tease.
+
+- **Original lines only** — grounded in their actual message where possible, no cliché formats
+- **Varies style** — confident compliment, power-move, mildly suggestive, dry/unimpressed-but-interested
+- **NSFW-capable** — double meanings, innuendo, suggestive metaphors if the vibe calls for it
+- **20% chance of a flustered follow-up** 3–6s later (e.g. `"i hate that i mean it"`, `"ur fault not mine"`, `"we never speak of this again"`)
+
+```
+User: ok but ur actually kinda cute
+Ana:  bold of u to flirt with me like u can handle what comes next
+Ana:  (5s later) ok i'm normal i promise
+```
+
+### Flirt trigger words (sample)
+```
+cute, pretty, beautiful, gorgeous, hot, sexy, crush, date, kiss, hug,
+love you, miss you, rizz, babe, baby, darling, wanna go out, be mine,
+dream girl, thicc, baddie, smooth, pickup, finesse, and more
+```
+
+---
+
+## Behaviour Nuances (Human-sounding)
+
+These are all the small things that make Ana feel like a real member rather than a bot:
+
+| Behaviour | Details |
+|---|---|
+| **Proportional typing delay** | <60 chars → 0.8–1.8s extra; 60–180 chars → 1.8–3.5s; >180 chars → 3.0–5.0s |
+| **Typo + correction** | ~4% of replies: sends with a character-swap typo, then sends `*word` 1.5–3s later |
+| **Emoji-only reaction** | ~12% of non-roast triggers: adds a single emoji reaction instead of replying |
+| **Low-signal skip** | ~15% chance to silently ignore messages that are only `lmao`, `omg`, `wow` etc. |
+| **Follow-up afterthoughts** | 8% (normal), 25% (roast), 20% (flirt) chance of a second message sent 3–8s later |
+| **Conversation history** | Last 10 messages per channel passed as context — Ana remembers what was just said |
+| **Per-user cooldown** | 25s between replies to the same person (bypassed on roasts) |
+| **Per-channel cooldown** | 7s between any replies in a channel (bypassed on roasts) |
+| **"Seen" reaction** | During per-user cooldown: adds 👀 💀 😭 instead of replying |
 
 ---
 
 ## How AI Replies Work
 
-When a trigger word is detected, Ana runs the full AI pipeline:
+When a trigger is detected, Ana runs:
 
-1. **Input prep** — The original message is passed to `process_with_nlp()`, truncated to 1000 characters
-2. **Groq first** — Calls Groq's Llama-4 Scout model with a concise reply prompt. Temperature 1.0 for some personality. Max 400 tokens.
-3. **Gemini Gen1 fallback** — If Groq fails (timeout, rate limit, error), calls `gemini-flash-lite-latest` via streaming API
-4. **Gemini Gen2 fallback** — If Gen1 also fails, calls `gemini-2.5-flash-lite`
-5. **Static fallback** — If all three fail, picks randomly from: `["Not sure what to say to that.", "Interesting...", "Well, that's something.", "Cool story, bro."]`
+1. **Input prep** — message passed to `process_with_nlp()`, truncated at 1000 chars. Author name sanitised (strips newlines, max 50 chars) to prevent prompt injection via crafted display names.
+2. **Mode selection** — `ROAST_PROMPT`, `FLIRT_PROMPT`, or `SYSTEM_PROMPT` chosen based on detected mode
+3. **Groq first** — Llama-4 Scout, temperature 1.1 (normal) / 1.3 (roast), max 200 tokens
+4. **Gemini Gen1 fallback** — `gemini-1.5-flash-latest`, temperature 1.2 / 1.4 (roast), max 200 tokens
+5. **Gemini Gen2 fallback** — `gemini-2.5-flash-lite`, same settings
+6. **Static fallback** — random choice from a pool of human-sounding short phrases
+7. **`post_process()`** — strips markdown, AI opener phrases, trailing periods, capitalised first letter
 
-The system prompt tells the model to respond concisely in 1-2 lines with a casual, friendly tone. Ana doesn't write essays.
+### Static fallback pool (sample)
+```
+"idk what to say lol"
+"ok but like... same"
+"wait what"
+"girl idk"
+"..."
+"yeah no"
+"no yeah"
+"wait explain"
+```
 
 ---
 
-## Joke Behavior
+## Joke Behaviour
 
-The random joke system has three constraints stacked:
+The random joke system has three stacked constraints:
 
-| Check | Value | Behavior |
+| Check | Default | Config key |
 |---|---|---|
-| Cooldown | 60 seconds (default) | Won't send if a joke was sent in the last 60s |
-| Random chance | 15% (default) | Even after cooldown clears, only 15% chance per message |
-| Daily limit | 3 jokes | Resets at midnight UTC-ish (based on `time.time() // 86400`) |
+| Cooldown | 60 seconds | `JOKE_COOLDOWN` |
+| Random chance | 15% | `JOKE_CHANCE` |
+| Daily limit | 3 jokes | hardcoded in `DadJokeService` |
 
-All three must pass before a joke fires. This means:
+All three must pass before a joke fires. The daily count resets automatically when the day rolls over.
+
 - Low-traffic servers might go long stretches without a joke
 - High-traffic servers won't get spammed
 - The daily cap keeps it feeling like a surprise, not a routine

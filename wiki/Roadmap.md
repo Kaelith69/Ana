@@ -1,80 +1,82 @@
 # Roadmap
 
-Planned features, ideas under consideration, and things we've thought about but probably won't do.
+What's been built, what's coming, and what's probably not happening.
 
 ---
 
-## Current State (v2.0.0)
+## Shipped (v3.0.0)
 
-Ana works. She's in production. She tells jokes, replies to trigger words with AI, and hasn't crashed in a while. That's the baseline.
+### Roast Mode
+Dedicated roast/comeback pipeline with its own prompt, higher AI temperature, cooldown bypass, faster typing, and follow-up pool. Ana always fires back when insulted — no exceptions.
+
+### Flirt Mode
+Improvised, original pick-up lines via a dedicated `FLIRT_PROMPT`. NSFW-capable. Includes a separate `_FLIRT_FOLLOWUPS` pool.
+
+### Per-User Rate Limiting
+Per-user 25s cooldown and per-channel 7s cooldown prevent spam. Roasts always bypass both. "Seen" reaction behaviour during cooldown.
+
+### Conversation History / Short-term Memory
+Per-channel sliding window of last 10 messages (5 exchanges) passed as context on every AI call. Ana knows what was just said.
+
+### AI Artefact Stripping (`post_process`)
+Deterministic post-processing on every reply: strips markdown, AI opener phrases, trailing periods, capitalises away from sentence-case.
+
+### Human-sounding Behavioural Simulation
+Proportional typing delays, 4% typo+correction, 12% emoji-only reactions, 3 follow-up pools with different probabilities, low-signal skip.
+
+### Raspberry Pi Autostart
+`setup_autostart.sh` — one command installs a systemd service that survives reboots, waits for network, and auto-restarts on crash.
+
+### `.env.example` Template
+Documented env var template committed to the repo — no more guessing what keys are needed.
+
+---
+
+## Shipped (v2.0.0)
+
+- Triple AI fallback chain (Groq → Gemini Gen1 → Gemini Gen2 → static)
+- 70+ trigger word list with multilingual greetings and cultural events
+- Dad joke system with configurable probability, cooldown, and daily cap
+- Flask keepalive on `:8080`
+- `!joke` and `!shutdown` commands
 
 ---
 
 ## Planned (Likely to Happen)
 
 ### Slash Commands
-Replace `!joke` and `!shutdown` with proper Discord slash commands (`/joke`, `/shutdown`).
+Replace `!joke` and `!shutdown` with proper Discord slash commands (`/joke`, `/shutdown`). Slash commands show in Discord's UI, have autocomplete, and are the direction Discord is pushing.
 
-Slash commands show up in Discord's UI, have autocomplete, and are the direction Discord is pushing. The `!` prefix still works but is increasingly old-school.
-
-**Impact:** `main.py` refactor, discord.py `app_commands` integration.
+**Impact:** `main.py` refactor, `discord.py` `app_commands` integration.
 
 ---
 
-### Per-User Rate Limiting
-Currently there's no limit on how many times one user can trigger Ana. In theory, one person could spam trigger words and generate constant AI API calls.
+### Custom Trigger Words Per Server
+Let server admins add their own trigger words via a command, stored per-guild. Would require a simple persistence layer (JSON or SQLite).
 
-Adding a per-user cooldown (e.g., max 1 AI reply per user per 30 seconds) would control costs and prevent abuse.
-
-**Impact:** `main.py` `on_message` handler, new in-memory rate limit tracker.
+**Impact:** New persistence layer, new admin commands.
 
 ---
 
 ## Under Consideration (Maybe)
 
-### Conversation Memory
-Right now every AI reply is stateless — Ana doesn't remember what was said 10 seconds ago. Adding a short-term context window (last N messages from a user) would make conversations feel more natural.
-
-Trade-offs: more complex, stores message content in memory (privacy consideration), increases API token usage.
-
-**Impact:** `nlp.py` refactor, new memory store in `main.py`.
-
----
-
-### Custom Trigger Words Per Server
-Let server admins add their own trigger words via a command, stored per-guild.
-
-Would require some form of persistence (a JSON file, SQLite, or similar). Currently Ana is completely stateless — this would change that.
-
-**Impact:** New persistence layer, `config.py` refactor, new admin commands.
-
----
-
 ### Per-Server Personality Config
-Let admins tune Ana's personality — more formal, more chaotic, topic-focused (only responds to tech talk, etc.).
-
-Would likely be implemented as per-server system prompt customization passed to the AI models.
+Let admins tune Ana's personality — more formal, more chaotic, topic-focused. Likely implemented as per-server system prompt customisation.
 
 ---
 
 ### Async Joke Pre-fetching
-Currently `!joke` makes a live HTTP request and you wait. Pre-fetching a small cache in the background would make joke delivery instant.
-
-The `JOKE_FETCH_BATCH` and `JOKE_FETCH_INTERVAL` config keys are already reserved for this feature.
+Pre-fetch a small joke cache in the background so `!joke` delivery is instant. `JOKE_FETCH_BATCH` and `JOKE_FETCH_INTERVAL` config keys are already reserved.
 
 ---
 
 ## Probably Not
 
 ### Database Integration
-Ana is intentionally stateless. Adding a database would add complexity, a new dependency, and potential privacy concerns without much benefit for the core use case.
-
-Unless conversation memory or per-server config gets traction, a database isn't planned.
-
----
+Ana is intentionally stateless beyond in-memory conversation history. Adding a persistent database would increase complexity and privacy surface area without much benefit for the core use case.
 
 ### Voice Channel Support
-Ana speaking actual audio in a voice channel is out of scope. This would require TTS integration, voice connection management, and significant complexity. Cool? Sure. Happening? Unlikely.
+TTS + voice connection management is out of scope. Cool in theory. Not happening.
 
 ---
 

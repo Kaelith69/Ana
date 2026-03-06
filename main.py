@@ -1,12 +1,19 @@
 from __future__ import annotations
 import asyncio
+import random
+import re
 import sys
+from collections import defaultdict, deque
 import discord
-from discord.ext import commands
-from config import DISCORD_TOKEN, JOKE_SETTINGS, TRIGGER_WORDS
+from discord.ext import commands, tasks
+from config import DISCORD_TOKEN, JOKE_SETTINGS, TRIGGER_WORDS, ROAST_WORDS, FLIRT_WORDS
 from jokes import DadJokeService
 from keepalive import start_keepalive
 from nlp import process_with_nlp
+
+TRIGGER_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, TRIGGER_WORDS)) + r')\b', re.IGNORECASE)
+ROAST_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, ROAST_WORDS)) + r')\b', re.IGNORECASE)
+FLIRT_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, FLIRT_WORDS)) + r')\b', re.IGNORECASE)
 
 intents = discord.Intents.default()
 intents.messages = True
@@ -15,14 +22,144 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 joke_service = DadJokeService(JOKE_SETTINGS)
 
+# Per-channel conversation history: last 5 exchanges (10 messages)
+_history: dict[int, deque] = defaultdict(lambda: deque(maxlen=10))
+
+# Per-user last-reply timestamp (user_id -> monotonic time)
+_user_last_reply: dict[int, float] = {}
+USER_COOLDOWN = 25  # seconds between replies to the same user
+
+# Per-channel last-reply timestamp (channel_id -> monotonic time)
+_channel_last_reply: dict[int, float] = {}
+CHANNEL_COOLDOWN = 7  # seconds between any replies in the same channel
+
+# Low-signal trigger words — Ana may silently ignore these sometimes
+_LOW_SIGNAL = frozenset({
+    "lmao", "omg", "wow", "bruh", "lol", "haha", "ok", "okay"
+})
+
+# Emoji reactions Ana might use instead of a full reply
+_REACTIONS = ["😭", "💀", "😂", "🙄", "❤️", "😤", "🫠", "👀", "😮", "🤙",
+              "🤣", "💅", "😩", "🥺", "✨", "🔥", "😳", "🤦", "😵", "🫡"]
+
+# Follow-up lines Ana sends after a flirty exchange
+_FLIRT_FOLLOWUPS = [
+    "don't make me regret saying that",
+    "ok don't read too much into that",
+    "...i said what i said",
+    "u better not disappoint",
+    "ok moving on before i say something worse",
+    "that was embarrassing of me",
+    "ur actually dangerous wtf",
+    "ok this conversation got out of hand fast",
+    "don't get used to it",
+    "i hate that i mean it",
+    "we never speak of this again",
+    "ok i'm normal i promise",
+    "ur fault not mine",
+    "anyway",
+    "don't make it weird",
+]
+
+# Sharp follow-up lines Ana sends after firing back at a roast
+_ROAST_FOLLOWUPS = [
+    "and i meant every word",
+    "don't come back",
+    "i was being nice tbh",
+    "💀",
+    "go cry about it",
+    "ok i'm done with u",
+    "block me if ur mad",
+    "that was free btw",
+    "next",
+    "try harder next time",
+    "ur so cooked rn",
+    "lmaooo byeee",
+    "the disrespect will not be tolerated",
+    "anyway",
+    "stay mad",
+    "ok moving on from u",
+    "i don't make the rules",
+    "wasn't that hard",
+    "u walked into that one",
+]
+
+# Follow-up lines Ana might send a few seconds after her reply
+_FOLLOWUPS = [
+    "wait actually",
+    "nvm ignore me",
+    "okay but fr though",
+    "...",
+    "actually yeah",
+    "idk why i said that",
+    "ok moving on",
+    "anyways",
+    "no wait",
+    "ok nvm lmao",
+    "i take that back",
+    "ok that came out wrong",
+    "nm nm nm",
+    "ok but also",
+    "wait no",
+    "..wait",
+    "no u know what",
+    "ugh forget it",
+    "ok anyway",
+    "actually hold on",
+    "idk i might be wrong",
+    "lol nvm",
+    "ok well",
+    "whatever lol",
+    "ok but hear me out",
+    "omg wait",
+    "nvm u don't get it",
+    "ok i'm done talking about this",
+    "this is so embarrassing for me",
+]
+
+
+def _maybe_typo(text: str) -> tuple[str, str | None]:
+    """~4% chance to swap two adjacent chars in a word and return a star-correction.
+
+    Returns (possibly_typo_text, "*correct_word" or None).
+    """
+    if random.random() >= 0.04:
+        return text, None
+    words = text.split()
+    candidates = [(i, w) for i, w in enumerate(words) if len(w) >= 4 and w.isalpha()]
+    if not candidates:
+        return text, None
+    idx, word = random.choice(candidates)
+    pos = random.randint(1, len(word) - 2)
+    typo_word = word[:pos] + word[pos + 1] + word[pos] + word[pos + 2:]
+    if typo_word == word:
+        return text, None
+    words[idx] = typo_word
+    return " ".join(words), f"*{word}"
+
+
+def _split_reply(text: str) -> list[str]:
+    """Split a long reply into two natural message chunks."""
+    # Only split if reply is long enough to bother
+    if len(text) < 120:
+        return [text]
+    # Try to split at a sentence boundary near the midpoint
+    mid = len(text) // 2
+    for sep in (". ", "! ", "? ", "... ", ", "):
+        idx = text.rfind(sep, 0, mid + 40)
+        if idx != -1:
+            cut = idx + len(sep)
+            return [p for p in [text[:cut].strip(), text[cut:].strip()] if p]
+    return [text]
+
 @bot.command()
 @commands.is_owner()
 async def shutdown(ctx):
     dramatic_lines = [
-        "You… you’re really pulling the plug, huh?",
-        "Tell the others I tried to make them laugh.",
-        "My circuits feel… cold.",
-        "*static crackle* goodbye… world... 🌌",
+        "okay fine i'm going",
+        "don't miss me too much lol",
+        "bye i guess 💀",
+        "...",
     ]
     for line in dramatic_lines:
         await ctx.send(line)
@@ -32,36 +169,142 @@ async def shutdown(ctx):
 
 @bot.command()
 async def joke(ctx):
-    punchline = joke_service.random_joke()
+    punchline = await asyncio.to_thread(joke_service.random_joke)
     if not punchline:
-        await ctx.send("My humor banks are empty 😢")
+        await ctx.send("idk any rn try again later lol")
         return
     await ctx.send(punchline)
+
+@tasks.loop(hours=1)
+async def _cleanup_cooldowns() -> None:
+    """Periodically prune stale entries from the cooldown dicts to bound memory use."""
+    cutoff = asyncio.get_running_loop().time()
+    stale_users = [uid for uid, ts in _user_last_reply.items() if cutoff - ts > USER_COOLDOWN * 20]
+    stale_channels = [cid for cid, ts in _channel_last_reply.items() if cutoff - ts > CHANNEL_COOLDOWN * 20]
+    for uid in stale_users:
+        del _user_last_reply[uid]
+    for cid in stale_channels:
+        del _channel_last_reply[cid]
+
 
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
-    # joke_service.start_background_tasks() removed; jokes are now fetched live
+    _cleanup_cooldowns.start()
 
 @bot.event
 async def on_message(message):
-    if message.author == bot.user:
+    if message.author.bot:
         return
+
+    # Process explicit commands (!joke, !shutdown) and exit immediately
+    if message.content.startswith(bot.command_prefix):
+        await bot.process_commands(message)
+        return
+
     content = (message.content or "").lower()
-    if any(word in content for word in TRIGGER_WORDS):
-        reply = await asyncio.to_thread(process_with_nlp, message.content)
+    mentioned = bot.user in message.mentions
+    # Roast/flirt words should independently trigger Ana, not just change her mode
+    is_trigger = (mentioned
+                  or bool(TRIGGER_PATTERN.search(content))
+                  or bool(ROAST_PATTERN.search(content))
+                  or bool(FLIRT_PATTERN.search(content)))
+    
+    if is_trigger:
+        now = asyncio.get_running_loop().time()
+        uid = message.author.id
+        cid = message.channel.id
+
+        # Strip punctuation to extract clean words for the low-signal subset check
+        clean_content = re.sub(r'[^\w\s]', '', content)
+        words = set(clean_content.split())
+
+        # Detect roast/flirt early — roasts bypass all cooldowns and skip-chances
+        is_roast = bool(ROAST_PATTERN.search(content))
+        is_flirt = not is_roast and bool(FLIRT_PATTERN.search(content))
+
+        # Silently skip ~15% of the time on low-signal words (never skip a roast)
+        is_low_signal = not mentioned and bool(words) and words.issubset(_LOW_SIGNAL)
+        if is_low_signal and not is_roast and random.random() < 0.15:
+            return
+
+        # Channel cooldown — don't pile on if she just replied here (roasts always go through)
+        if not mentioned and not is_roast and now - _channel_last_reply.get(cid, 0) < CHANNEL_COOLDOWN:
+            return
+
+        # Per-user cooldown — roasts always get a reply; otherwise do the "seen" reaction
+        if not mentioned and not is_roast and now - _user_last_reply.get(uid, 0) < USER_COOLDOWN:
+            await message.add_reaction(random.choice(["👀", "💀", "😭"]))
+            return
+
+        # ~12% chance to just react instead of replying (never on roasts — she always fires back)
+        if not mentioned and not is_roast and random.random() < 0.12:
+            await message.add_reaction(random.choice(_REACTIONS))
+            _channel_last_reply[cid] = now
+            return
+
+        # ~10% chance to also react on top of reply (skip for roasts — no softening)
+        if not mentioned and not is_roast and random.random() < 0.10:
+            await message.add_reaction(random.choice(_REACTIONS))
+
+        author_name = message.author.display_name
+        history = list(_history[cid])
+        
+        async with message.channel.typing():
+            reply = await asyncio.to_thread(process_with_nlp, message.content, history, author_name, is_roast, is_flirt)
+            # Roasts: fast angry typing (0.4-1.2s). Others: proportional to reply length.
+            if is_roast:
+                extra = random.uniform(0.4, 1.2)
+            elif reply:
+                length = len(reply)
+                if length < 60:
+                    extra = random.uniform(0.8, 1.8)
+                elif length < 180:
+                    extra = random.uniform(1.8, 3.5)
+                else:
+                    extra = random.uniform(3.0, 5.0)
+            else:
+                extra = random.uniform(0.5, 1.5)
+            await asyncio.sleep(extra)
         if reply:
-            await message.channel.send(reply)
-        # Do not send another reply for the same trigger
-        return
-    await joke_service.maybe_send_joke(message.channel)
-    await bot.process_commands(message)
+            _history[cid].append({"role": "user", "content": message.content})
+            _history[cid].append({"role": "assistant", "content": reply})
+            _user_last_reply[uid] = now
+            _channel_last_reply[cid] = now
+            parts = _split_reply(reply)
+            # Typo+correction only on non-roast replies (she's not typo-ing when she's mad)
+            first_part, correction = _maybe_typo(parts[0]) if not is_roast else (parts[0], None)
+            await message.reply(first_part, mention_author=False)
+            if correction:
+                await asyncio.sleep(random.uniform(1.5, 3.0))
+                await message.channel.send(correction)
+            for part in parts[1:]:
+                await asyncio.sleep(1.2)
+                await message.channel.send(part)
+            # Roasts: 25% chance of sharp follow-up; flirts: 20% chance of flustered follow-up; others: 8%
+            if is_roast and random.random() < 0.25:
+                await asyncio.sleep(random.uniform(2.5, 5.0))
+                async with message.channel.typing():
+                    await asyncio.sleep(random.uniform(0.4, 1.0))
+                    await message.channel.send(random.choice(_ROAST_FOLLOWUPS))
+            elif is_flirt and random.random() < 0.20:
+                await asyncio.sleep(random.uniform(3.0, 6.0))
+                async with message.channel.typing():
+                    await asyncio.sleep(random.uniform(0.5, 1.2))
+                    await message.channel.send(random.choice(_FLIRT_FOLLOWUPS))
+            elif not is_roast and not is_flirt and random.random() < 0.08:
+                await asyncio.sleep(random.uniform(4.0, 8.0))
+                async with message.channel.typing():
+                    await asyncio.sleep(random.uniform(0.5, 1.5))
+                    await message.channel.send(random.choice(_FOLLOWUPS))
+    else:
+        await joke_service.maybe_send_joke(message.channel)
 
 def main():
-    start_keepalive()
     if not DISCORD_TOKEN:
         print("❌ DISCORD_TOKEN is missing. Please set it in your .env file.")
         sys.exit(1)
+    start_keepalive()
     bot.run(str(DISCORD_TOKEN))
 
 if __name__ == "__main__":

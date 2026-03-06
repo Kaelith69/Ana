@@ -1,18 +1,19 @@
 # Ana Wiki — Home
 
-Welcome to the Ana documentation wiki. You've found the place where we explain the bot in more detail than anyone asked for.
+Welcome to the Ana documentation wiki.
 
 ---
 
 ## What is Ana?
 
-Ana is a **Discord bot** built in Python. She does three things well:
+Ana is a **Discord bot** built in Python, designed to be indistinguishable from a real server member. She does several things well:
 
-1. **Talks back** — Detect trigger words in messages and generate AI-powered replies using a triple-redundant AI pipeline (Groq Llama-4 → Gemini Gen1 → Gemini Gen2 → static fallback)
-2. **Tells jokes** — Randomly drops dad jokes fetched live from `icanhazdadjoke.com`, with configurable probability, cooldown, and daily cap
-3. **Stays alive** — Runs a Flask HTTP server on port 8080 for uptime monitoring
-
-She's approximately 250 lines of Python across 5 source files. She is not trying to replace a full-featured bot framework. She is trying to make your Discord server a little more entertaining.
+1. **Talks back** — scans messages for 100+ trigger words and generates AI replies via a triple-fallback pipeline (Groq Llama-4 → Gemini Gen1 → Gemini Gen2 → human-sounding static fallback)
+2. **Claps back** — dedicated roast mode with savage comebacks, faster typing, higher AI temperature, bypasses all cooldowns
+3. **Flirts** — improvised pick-up lines and flirty replies with NSFW capability
+4. **Acts human** — proportional typing delays, typo+correction, emoji reactions, unprompted follow-up messages, conversation history
+5. **Tells jokes** — randomly drops live-fetched dad jokes with configurable probability, cooldown, and daily cap
+6. **Stays alive** — Flask HTTP server on port 8080 for uptime monitoring; `setup_autostart.sh` for Raspberry Pi
 
 ---
 
@@ -20,12 +21,12 @@ She's approximately 250 lines of Python across 5 source files. She is not trying
 
 | Page | What's in it |
 |---|---|
-| [Architecture](Architecture) | How the pieces fit together, module breakdown |
-| [Installation](Installation) | Step-by-step setup, environment config |
-| [Usage](Usage) | Commands, trigger words, how AI replies work |
+| [Architecture](Architecture) | Module breakdown, data flow, design decisions |
+| [Installation](Installation) | Step-by-step setup, `.env` config, Raspberry Pi |
+| [Usage](Usage) | Commands, trigger words, roast/flirt mode, behaviour nuances |
 | [Privacy](Privacy) | What data Ana touches and what she doesn't |
 | [Troubleshooting](Troubleshooting) | Common problems and how to fix them |
-| [Roadmap](Roadmap) | What's planned, what's being considered |
+| [Roadmap](Roadmap) | What's done, what's planned, what's not happening |
 
 ---
 
@@ -36,7 +37,7 @@ She's approximately 250 lines of Python across 5 source files. She is not trying
 | Language | Python 3.10+ |
 | Discord integration | discord.py |
 | Primary AI | Groq — Llama-4 Scout 17B |
-| Fallback AI (Gen1) | Google Gemini Flash Lite |
+| Fallback AI (Gen1) | Google Gemini 1.5 Flash |
 | Fallback AI (Gen2) | Google Gemini 2.5 Flash Lite |
 | Dad jokes | icanhazdadjoke.com API |
 | Keepalive | Flask 3.x |
@@ -48,17 +49,19 @@ She's approximately 250 lines of Python across 5 source files. She is not trying
 
 ```
 Ana/
-├── main.py          # Discord events, commands, startup
-├── nlp.py           # AI pipeline: Groq + Gemini fallbacks
-├── jokes.py         # Dad joke fetching, rate limiting
-├── config.py        # Env vars, settings, trigger words
-└── keepalive.py     # Flask HTTP health endpoint
+├── main.py             # Discord events, commands, human-behaviour simulation
+├── nlp.py              # AI pipeline: Groq + Gemini fallbacks + post_process()
+├── jokes.py            # Dad joke fetching, rate limiting
+├── config.py           # Env vars, SYSTEM_PROMPT, trigger/roast/flirt word lists
+├── keepalive.py        # Flask HTTP health endpoint
+├── .env.example        # Template for .env — copy and fill in your keys
+└── setup_autostart.sh  # Raspberry Pi systemd autostart setup
 ```
 
 ---
 
 ## Version
 
-Current stable version: **2.0.0**
+Current stable version: **3.0.0**
 
 See [CHANGELOG](https://github.com/Kaelith69/Ana/blob/main/CHANGELOG.md) for what changed.
