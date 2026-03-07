@@ -142,6 +142,72 @@ FLIRT_WORDS = frozenset({
     "soft", "thicc", "baddie", "finesse",
 })
 
+# ---------------------------------------------------------------------------
+# Ana v4 — Groq model waterfall
+# ---------------------------------------------------------------------------
+# Tried in priority order. A rate-limited or failed model is skipped and the
+# next one is attempted. Llama 4 Scout is the current always-on baseline —
+# listed third so Kimi K2 and Llama 3.3 70B are preferred when available.
+# To override model slugs without touching code, set GROQ_MODEL_PRIMARY /
+# GROQ_MODEL_BACKUP1 / GROQ_MODEL_BACKUP2 / GROQ_MODEL_BACKUP3 in .env.
+GROQ_MODEL_WATERFALL = [
+    os.getenv("GROQ_MODEL_PRIMARY", "moonshotai/kimi-k2-instruct"),
+    os.getenv("GROQ_MODEL_BACKUP1", "meta-llama/llama-3.3-70b-versatile"),
+    os.getenv("GROQ_MODEL_BACKUP2", "meta-llama/llama-4-scout-17b-16e-instruct"),
+    os.getenv("GROQ_MODEL_BACKUP3", "qwen/qwen3-32b"),
+]
+
+# Per-model generation settings and prompt patches.
+# 'thinking': False  — disables Qwen 3's chain-of-thought bleed (passed as extra_body).
+# 'patch'           — short text appended to the system prompt in normal mode only
+#                     (roast/flirt prompts are self-contained and don't receive patches).
+MODEL_SETTINGS = {
+    # #1 — Kimi K2 (best instruction following + multilingual)
+    "moonshotai/kimi-k2-instruct": {
+        "max_tokens": 150,
+        "temperature": 0.88,
+        "top_p": 0.92,
+        "thinking": None,
+        "patch": (
+            "Respond as Ana texting — short fragments, lowercase, never formal. "
+            "Do not over-explain. Match energy precisely."
+        ),
+    },
+    # #2 — Llama 3.3 70B (proven, stable persona)
+    "meta-llama/llama-3.3-70b-versatile": {
+        "max_tokens": 130,
+        "temperature": 0.85,
+        "top_p": 0.90,
+        "thinking": None,
+        "patch": None,
+    },
+    # #3 — Llama 4 Scout (fast, 10M context, MoE)
+    "meta-llama/llama-4-scout-17b-16e-instruct": {
+        "max_tokens": 130,
+        "temperature": 0.87,
+        "top_p": 0.91,
+        "thinking": None,
+        "patch": (
+            "Keep responses under 3 sentences for casual turns. "
+            "Fragment your thoughts across short lines, not one paragraph. "
+            "Do not start with 'I'. Lowercase. You are Ana, not an assistant."
+        ),
+    },
+    # #4 — Qwen 3 32B (reasoning model — thinking must be disabled)
+    "qwen/qwen3-32b": {
+        "max_tokens": 120,
+        "temperature": 0.82,
+        "top_p": 0.90,
+        "thinking": False,
+        "patch": (
+            "Do not show reasoning or thinking steps. "
+            "Respond directly as Ana. Short. Lowercase. Fragmented. "
+            "No analysis visible — just her response."
+        ),
+    },
+}
+
+
 if not DISCORD_TOKEN:
     print("⚠️ Warning: Missing DISCORD_TOKEN in .env. Bot will not start.")
 

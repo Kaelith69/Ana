@@ -3,8 +3,11 @@ import json
 import random
 import re
 from typing import List, Optional
-from groq import Groq
-from config import GEN1_API_KEY, GEN2_API_KEY, GROQ_API_KEY, SYSTEM_PROMPT
+from groq import Groq, RateLimitError as GroqRateLimitError
+from config import (
+    GEN1_API_KEY, GEN2_API_KEY, GROQ_API_KEY, SYSTEM_PROMPT,
+    GROQ_MODEL_WATERFALL, MODEL_SETTINGS,
+)
 
 ROAST_PROMPT = (
     "you are ana — a real person in this server, NOT a bot."
@@ -122,7 +125,8 @@ FALLBACK_RESPONSES = [
 
 
 def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_name: Optional[str] = None, roast: bool = False, flirt: bool = False) -> Optional[str]:
-    """Unified entry point: try GROQ first, then GEN1, then GEN2.
+    """Unified entry point: Groq waterfall (Kimi K2 → Llama 3.3 70B → Llama 4 Scout → Qwen 3 32B),
+    then Gemini Gen1, then Gemini Gen2, then a hardcoded fallback.
 
     Returns a reply string (may be empty)."""
     clean_text = (text or "").strip()
@@ -133,13 +137,13 @@ def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_nam
     if author_name:
         author_name = re.sub(r'[\r\n\t]', ' ', author_name).strip()[:50]
 
-    # Try GROQ primary
+    # Try Groq waterfall — internally cycles through GROQ_MODEL_WATERFALL
     try:
         reply = call_groq(clean_text, history, author_name, roast, flirt)
         if reply:
             return reply
     except Exception as e:
-        print(f"GROQ primary failed: {e}")
+        print(f"Groq waterfall failed unexpectedly: {e}")
 
     # Fallback to GEN1 (backup)
     try:
@@ -161,48 +165,111 @@ def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_nam
     return random.choice(FALLBACK_RESPONSES)
 
 
-def call_groq(input_text: str, history: Optional[List[dict]] = None, author_name: Optional[str] = None, roast: bool = False, flirt: bool = False) -> Optional[str]:
-    """Generate a response using Groq (primary)."""
-    if _groq_client is None:
-        return None
-    truncated = input_text[:1000]
-    prompt = ROAST_PROMPT if roast else (FLIRT_PROMPT if flirt else SYSTEM_PROMPT)
+def _call_single_groq_model(
+    model_id: str,
+    input_text: str,
+    history: Optional[List[dict]],
+    author_name: Optional[str],
+    roast: bool,
+    flirt: bool,
+) -> Optional[str]:
+    """Call one specific Groq model and return the reply, or None if empty.
+
+    Raises ``GroqRateLimitError`` on 429 so the caller can skip to the next model.
+    All other API / network errors are also raised so the waterfall can log and skip.
+    """
+    settings = MODEL_SETTINGS.get(model_id, {})
+
+    # Temperature: elevated for roast/flirt; per-model value for normal conversation.
+    if roast:
+        temperature = 1.3
+    elif flirt:
+        temperature = 1.1
+    else:
+        temperature = settings.get("temperature", 0.88)
+
+    max_tokens = settings.get("max_tokens", 150)
+    top_p = settings.get("top_p", 0.92)
+    thinking = settings.get("thinking")  # None = omit; False = disable (Qwen 3)
+
+    # Build prompt: roast/flirt are self-contained; normal mode gets model patch.
+    base_prompt = ROAST_PROMPT if roast else (FLIRT_PROMPT if flirt else SYSTEM_PROMPT)
+    if not roast and not flirt:
+        patch = settings.get("patch")
+        if patch:
+            base_prompt = base_prompt + "\n\n" + patch
+
     if author_name:
-        prompt += f" The person you're talking to right now is called {author_name}. Use their name naturally sometimes."
-    messages = [{"role": "system", "content": prompt}]
+        base_prompt += (
+            f" The person you're talking to right now is called {author_name}."
+            " Use their name naturally sometimes."
+        )
+
+    messages: List[dict] = [{"role": "system", "content": base_prompt}]
     if history:
         messages.extend(history)
-    messages.append({"role": "user", "content": truncated})
-    try:
-        completion = _groq_client.chat.completions.create(
-            model="meta-llama/llama-4-scout-17b-16e-instruct",
-            messages=messages,
-            temperature=1.3 if roast else 1.1,
-            max_completion_tokens=200,
-            top_p=1,
-            stream=False,
-            stop=None,
-        )
-        if not completion.choices:
-            return None
-        content = completion.choices[0].message.content
-        # Normalize content to plain text
-        if content is None:
-            raw = None
-        elif isinstance(content, str):
-            raw = content
-        else:
-            try:
-                raw = json.dumps(content)
-            except Exception:
-                raw = str(content)
-        reply = normalize_response(raw)
-        print("\nGROQ Output:")
-        print(reply)
-        return reply
-    except Exception as err:
-        print(f"Groq request failed: {err}")
+    messages.append({"role": "user", "content": input_text[:1000]})
+
+    kwargs: dict = dict(
+        model=model_id,
+        messages=messages,
+        temperature=temperature,
+        max_completion_tokens=max_tokens,
+        top_p=top_p,
+        stream=False,
+        stop=None,
+    )
+    # Pass thinking=False as extra_body for models that support it (Qwen 3)
+    if thinking is False:
+        kwargs["extra_body"] = {"thinking": False}
+
+    completion = _groq_client.chat.completions.create(**kwargs)  # type: ignore[union-attr]
+    if not completion.choices:
         return None
+
+    content = completion.choices[0].message.content
+    if content is None:
+        raw = None
+    elif isinstance(content, str):
+        raw = content
+    else:
+        try:
+            raw = json.dumps(content)
+        except Exception:
+            raw = str(content)
+
+    reply = normalize_response(raw)
+    if reply:
+        print(f"\nGROQ [{model_id}] Output:\n{reply}")
+    return reply
+
+
+def call_groq(
+    input_text: str,
+    history: Optional[List[dict]] = None,
+    author_name: Optional[str] = None,
+    roast: bool = False,
+    flirt: bool = False,
+) -> Optional[str]:
+    """Try each model in GROQ_MODEL_WATERFALL in priority order.
+
+    Skips to the next model on a rate-limit (429) or any API/network error.
+    Returns the first non-empty reply, or None if every model in the waterfall fails.
+    """
+    if _groq_client is None:
+        return None
+    for model_id in GROQ_MODEL_WATERFALL:
+        try:
+            reply = _call_single_groq_model(
+                model_id, input_text, history, author_name, roast, flirt
+            )
+            if reply:
+                return reply
+        except GroqRateLimitError:
+            print(f"Groq rate limit on {model_id!r} — trying next model")
+        except Exception as e:
+            print(f"Groq {model_id!r} failed: {e}")
+    return None
 
 
 def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Optional[List[dict]] = None, author_name: Optional[str] = None, roast: bool = False, flirt: bool = False, label: str = "Gemini") -> Optional[str]:
