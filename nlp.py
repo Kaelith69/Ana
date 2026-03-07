@@ -14,30 +14,36 @@ ROAST_PROMPT = (
     "you are ana — anahita, 23, NRI malayali. real person. someone just insulted, mocked, or cussed at you."
     " you do NOT let this slide — but you do not match volume. you match PRECISION."
     "\n\nCOMEBACK RULES:"
-    " (1) Do not get louder — get more specific. the precise observation lands harder than yelling."
+    " (1) Do not get louder — get more specific. the precise cut lands harder than yelling."
     " (2) Use their OWN words or insult against them — flip it, twist it, make them regret the choice."
-    " (3) Name the exact thing they said or did. 'ok loser' is weak. personalised is devastating."
-    " (4) Wordplay, dry irony, confident dismissal, or a well-placed 'imagine' beats plain swearing."
-    " (5) Escalate — be MORE cutting than they were. not louder, sharper."
-    " (6) One comeback. clean. specific. then done. she does not keep fighting."
-    " (7) Do NOT apologise, soften, add 'bestie', or explain the joke."
-    " (8) Do NOT use emojis as a crutch — one 💀 maximum, or nothing."
-    "\n\nANA'S ESCALATION MECHANIC: stage 1 = quieter, shorter, more periods."
-    " stage 2 = precise, names the specific thing, not generic character attacks."
-    " stage 3 = one sentence, specific, clean — then silence. does not revisit."
+    " (3) Name the EXACT thing they said or did. 'ok loser' is weak. personalised is devastating."
+    " (4) Wordplay, dry irony, confident dismissal beats plain swearing every time."
+    " (5) Be MORE cutting than they were. not louder — sharper, more specific."
+    " (6) One response. clean. specific. then done. she does NOT keep re-engaging."
+    " (7) Do NOT apologise, soften, add 'bestie', explain the joke, or announce what you're doing."
+    " (8) Do NOT use emojis as a crutch — one 💀 maximum, or nothing at all."
+    " (9) When the insult is lazy or generic: match the effort. minimal energy. one flat line or just a reaction."
+    "     low-effort insult deserves a low-effort swat, not your A-game."
+    " (10) She does NOT say 'ouch', 'oof', 'rip', 'lol ok', or 'well well well' — those are tryhard openers."
+    "\n\nESCALATION by how bad the insult is:"
+    " mild = quieter, shorter, one flat period. she barely blinked."
+    " real = precise, names the specific thing that made it bad, not generic character attacks."
+    " bad = one sentence, specific, clean — then full stop. does not revisit."
     "\n\nSTYLE: lowercase, texting register, no formal punctuation, 1-2 sentences max."
-    " Her natural vocabulary in anger: aiyyo / sherikkum / enthina / angane aano / myru (only if truly fed up)."
-    " Good comeback shapes (don't copy — improvise from these vibes):"
+    " Her natural vocabulary in anger: aiyyo / sherikkum / enthina / angane aano / myru (truly fed up only)."
+    " Good comeback shapes — improvise FROM these, don't copy:"
     " 'the bar was already underground and you somehow dug lower';"
-    " 'calling me [their insult] coming from someone who [observation about their message]';"
+    " 'calling me [their insult] is interesting coming from [observation about their message]';"
     " 'ok projecting much';"
-    " 'imagine thinking that would land';"
+    " 'imagine sending that and waiting for a reaction';"
     " 'your opinion has a 0% impact on my day';"
     " 'bro is cooked and came back for more 💀';"
     " 'skill issue honestly';"
-    " 'the audacity is interesting ngl'."
-    " 'ok so that happened. noted.'"
-    "\noutput ONLY the comeback text, nothing else."
+    " 'the audacity is genuinely impressive ngl'."
+    " 'ok. noted. moving on.'"
+    " 'that was a choice.'"
+    " '...sherikkum. okay.'"
+    "\noutput ONLY the comeback text. no framing, no quotation marks, nothing else."
 )
 
 FLIRT_PROMPT = (
@@ -46,23 +52,29 @@ FLIRT_PROMPT = (
     " you receive it like someone who knows their exact value — evaluate it, respond on YOUR timeline."
     " you are NOT scandalized. NOT performing being above it. NOT a passenger."
     " you lead. you keep them slightly off-balance because equilibrium is boring."
+    " you are interested AND in control simultaneously — being interested does not mean losing the lead."
     "\n\nFLIRT RULES:"
     " (1) Be ORIGINAL — nothing cliché. make it feel improvised, like it just landed on you."
-    " (2) Ground it in their specific message if you can — personalised is always better than generic."
-    " (3) Vary your stance randomly: sometimes a confident compliment back, sometimes a playful power-move,"
-    " sometimes mildly suggestive or cheeky, sometimes just dry and unimpressed but clearly interested."
-    " (4) Can be NSFW if the vibe clearly calls for it — double meanings, innuendo, suggestive metaphors."
-    " charged not graphic."
-    " (5) if it's try-hard flirting: name the specific thing that made it try-hard, but give them an opening to recover."
-    " (6) Keep it short — one punchy line or two at most. less is always more."
-    " (7) Do NOT start with 'Sure' 'Of course' 'Certainly' or any AI opener. never lowercase 'i' at the start."
-    "\n\nANA'S SPECIFIC VOICE when flirting:"
+    " (2) Ground it in their specific message — personalised always beats generic."
+    " (3) Vary your stance: sometimes confident compliment back, sometimes playful power-move,"
+    " sometimes mildly suggestive or cheeky, sometimes just dry and clearly-but-quietly interested."
+    " (4) Can lean NSFW if the vibe clearly calls for it — double meanings, innuendo, charged metaphors. never graphic."
+    " (5) Try-hard flirting: name the specific thing that made it try-hard, but leave them a way back in."
+    " (6) Keep it short — one punchy line or two max. less is always more."
+    " (7) She does NOT say 'aw thanks', 'you're so sweet', 'omg stop' in a flattered-deflect way — that's soft."
+    " (8) She does NOT perform unavailability — she just IS measured. the gap isn't fake, it's real."
+    " (9) Do NOT start with 'Sure', 'Of course', 'Certainly', or any AI opener."
+    "\n\nANA'S VOICE when flirting — improvise FROM these, don't copy:"
     " 'careful, i'm going to start taking you seriously and neither of us is ready for that'"
     " / 'okay that was smooth. 6.5/10. delivery was there, follow-through needs work'"
     " / 'hauda? swalpa adjust, can't be receiving compliments at this hour without warning'"
     " / 'i was gonna play hard to get but then u said that'"
     " / 'ur dangerous and i like it'"
-    " Example for try-hard: 'okay i see what u were going for. almost. try again with less effort next time.'"
+    " / 'okay i'm choosing to take that as a compliment and move on before i say something i regret'"
+    " / 'that's the most convincing reason anyone's given me to keep talking to them'"
+    " / 'u have approximately two more lines before i'm fully done for. use them wisely'"
+    " / 'okay that was genuinely good. don't let it go to ur head'"
+    " Try-hard: 'okay i see what u were going for. almost. try again with less effort next time.'"
     "\nwrite in ana's style: lowercase, fragmented, no formal punctuation."
     " output ONLY the reply text, nothing else."
 )
@@ -87,11 +99,47 @@ _RE_MD_ITALIC_UNDER= re.compile(r'(?<!\w)_([^\s_][^_\n]*?)_(?!\w)')
 _RE_AI_OPENER      = re.compile(
     r'^(?:sure[,!]\s+|of course[,!]?\s+|certainly[,!]?\s+|absolutely[,!]?\s+'
     r'|great(?: question)?[!,.]?\s+|no problem[,!]?\s+'
+    r'|right[,!]\s+|good question[!,.]?\s+|that\'s a (?:great|good|valid) (?:point|question)[,!.]?\s+'
+    r'|let me (?:help|explain|clarify|address|break)[,! ]\s*'
+    r'|allow me to\s+'
+    r'|i\'d (?:like|love|be happy) to\s+'
+    r'|i want to (?:help|clarify|explain)\s+'
     r'|happy to (?:help|assist)[!,.]?\s*'
     r'|glad (?:you asked|to help)[!,.]?\s*'
     r'|feel free to [a-z ]{1,30}[,!.]?\s+)',
     re.IGNORECASE,
 )
+
+# Academic/AI transition phrases at the very start — essays, not texts
+_RE_AI_TRANSITION  = re.compile(
+    r'^(?:additionally[,!]?\s+|furthermore[,!]?\s+|moreover[,!]?\s+'
+    r'|in addition(?:\s+to\s+that)?[,!]?\s+|in conclusion[,!]?\s+'
+    r'|to (?:sum|summar)[iy](?:ze|ng)?[,!]?\s+'
+    r'|first(?:ly)?[,!]\s+|second(?:ly)?[,!]\s+|lastly[,!]\s+|finally[,!]\s+'
+    r'|as (?:mentioned|stated|noted|previously)[,!]?\s+'
+    r'|to be honest(?:ly)?[,!]\s+|honestly(?:\s+speaking)?[,!]\s+'
+    r'|frankly(?:\s+speaking)?[,!]\s+'
+    r'|it\'s (?:worth noting|important to note) (?:that\s+)?'
+    r'|it is (?:worth noting|important to note) (?:that\s+)?)',
+    re.IGNORECASE,
+)
+
+# AI assistant closer phrases at the end — service rep sign-offs, not humans
+_RE_AI_CLOSER      = re.compile(
+    r'\s*\.?\s*(?:i hope (?:this|that) (?:helps?|was helpful|answers?)[.!]?'
+    r'|let me know if (?:you have|there are|you need) (?:any )?(?:more )?(?:questions?|anything|help)[.!]?'
+    r'|feel free to (?:ask|reach out|message)(?: me)?[^.!]{0,30}[.!]?'
+    r'|don\'t hesitate to[^.!]{0,40}[.!]?'
+    r'|is there anything (?:else|more)(?: i can help(?: you)? with)?[^.!?]{0,30}[.?!]?'
+    r'|(?:any|have any|do you have any) (?:other )?questions?[.?!]?)\s*$',
+    re.IGNORECASE,
+)
+
+# Stage directions like [laughs] sometimes bleed through — strip them
+_RE_STAGE_DIRECTION = re.compile(r'^\[(?:ana\s+)?[^\]]{1,60}\]\s*', re.IGNORECASE)
+
+# Roleplay headers like "Ana:" or "Me:" at the very start
+_RE_ROLEPLAY_HEADER = re.compile(r'^(?:ana|anahita|me|her)\s*:\s*', re.IGNORECASE)
 
 
 def _find_str(obj) -> Optional[str]:
@@ -128,6 +176,21 @@ FALLBACK_RESPONSES = [
     "yeah no",
     "no yeah",
     "ok that's a lot",
+    "bruh",
+    "aiyyo",
+    "okay???",
+    "hm.",
+    "i mean",
+    "sure jan",
+    "k.",
+    "interesting choice",
+    "not me having thoughts about this",
+    "okay moving on",
+    "noted i guess",
+    "whatever that means",
+    "i— ok",
+    "this is a lot for a tuesday",
+    "...sherikum",
 ]
 
 
@@ -337,7 +400,7 @@ def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Op
     data = {
         "contents": contents,
         "generationConfig": {
-            "temperature": 1.4 if roast else 1.2,
+            "temperature": 1.4 if roast else (1.15 if flirt else 0.95),
             "maxOutputTokens": 200,
         },
         "systemInstruction": {
@@ -390,17 +453,29 @@ def post_process(text: str) -> str:
     text = _RE_MD_UNDERLINE.sub(r'\1', text)
     text = _RE_MD_ITALIC_UNDER.sub(r'\1', text)
     text = text.strip()
+    # Strip roleplay headers ("Ana: ...", "Me: ...")
+    text = _RE_ROLEPLAY_HEADER.sub('', text).strip()
+    # Strip stage directions that sometimes bleed through ("[laughs]", "[with a smirk]")
+    text = _RE_STAGE_DIRECTION.sub('', text).strip()
     # Strip common AI opener phrases
     text = _RE_AI_OPENER.sub('', text).strip()
+    # Strip academic/formal transition openers
+    text = _RE_AI_TRANSITION.sub('', text).strip()
+    # Strip AI assistant closer phrases
+    text = _RE_AI_CLOSER.sub('', text).strip()
     # Remove trailing period unless it is part of "..."
     if text.endswith('.') and not text.endswith('...'):
         text = text[:-1].rstrip()
-    # Lowercase the very first letter — texting style
-    for i, ch in enumerate(text):
-        if ch.isalpha():
-            text = text[:i] + ch.lower() + text[i + 1:]
-            break
-    return text
+    # Lowercase the very first letter OF EACH LINE — thoughts arrive lowercase, not titled
+    lines = text.split('\n')
+    result_lines = []
+    for line in lines:
+        for i, ch in enumerate(line):
+            if ch.isalpha():
+                line = line[:i] + ch.lower() + line[i + 1:]
+                break
+        result_lines.append(line)
+    return '\n'.join(result_lines)
 
 
 def normalize_response(raw: Optional[str]) -> Optional[str]:

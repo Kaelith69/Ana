@@ -59,6 +59,16 @@ _FLIRT_FOLLOWUPS = [
     "ur fault not mine",
     "anyway",
     "don't make it weird",
+    "ok that was too honest of me ignore it",
+    "i was NOT prepared for that",
+    "this is ur fault entirely",
+    "...okay but like",
+    "u know what forget i said anything",
+    "i keep saying things and meaning them which is a problem",
+    "anyway how's ur day going lol",
+    "okay i need to log off before i embarrass myself more",
+    "don't look at me",
+    "this is the last normal thing i'll say tonight",
 ]
 
 # Sharp follow-up lines Ana sends after firing back at a roast
@@ -82,6 +92,15 @@ _ROAST_FOLLOWUPS = [
     "i don't make the rules",
     "wasn't that hard",
     "u walked into that one",
+    "take that home and think about it",
+    "not my fault u came here",
+    "ok bye",
+    "sherikkum. anyway.",
+    "the bar was right there and u still missed",
+    "i barely tried ngl",
+    "...ok next",
+    "that was mercy",
+    "aiyyo. go home.",
 ]
 
 # Follow-up lines Ana might send a few seconds after her reply
@@ -115,6 +134,22 @@ _FOLLOWUPS = [
     "nvm u don't get it",
     "ok i'm done talking about this",
     "this is so embarrassing for me",
+    "okay no but",
+    "...hm",
+    "u know what forget it",
+    "actually no i stand by it",
+    "that sounded different in my head",
+    "ok ngl",
+    "i— nvm",
+    "wait hold on",
+    "okay yeah no",
+    "aiyyo",
+    "...okay anyway",
+    "this has nothing to do with anything but",
+    "not me immediately regretting that",
+    "ok that was a lot",
+    "no but genuinely",
+    "anyway ignore the last thing",
 ]
 
 
@@ -139,11 +174,19 @@ def _maybe_typo(text: str) -> tuple[str, str | None]:
 
 
 def _split_reply(text: str) -> list[str]:
-    """Split a long reply into two natural message chunks."""
-    # Only split if reply is long enough to bother
+    """Split a reply into naturally-paced message chunks.
+
+    Newline-separated thoughts always become separate Discord messages —
+    Ana's voice has packets on their own lines, not walls of text.
+    Single-line long replies are split at a sentence boundary near the midpoint.
+    """
+    # Always split on newlines — each thought packet = its own message
+    parts = [p.strip() for p in text.split('\n') if p.strip()]
+    if len(parts) > 1:
+        return parts
+    # Single-line only: split if long enough
     if len(text) < 120:
         return [text]
-    # Try to split at a sentence boundary near the midpoint
     mid = len(text) // 2
     for sep in (". ", "! ", "? ", "... ", ", "):
         idx = text.rfind(sep, 0, mid + 40)
@@ -173,6 +216,20 @@ async def joke(ctx):
     if not punchline:
         await ctx.send("idk any rn try again later lol")
         return
+    _JOKE_SETUPS = [
+        "okay don't judge me",
+        "wait i have one",
+        "ok bear with me",
+        "this is terrible and i love it",
+        "i hate that this made me laugh",
+        "you asked for this",
+        "ok this one's bad. in a good way.",
+        "u didn't hear this from me",
+    ]
+    await ctx.send(random.choice(_JOKE_SETUPS))
+    await asyncio.sleep(random.uniform(1.0, 2.0))
+    async with ctx.typing():
+        await asyncio.sleep(random.uniform(1.2, 2.2))
     await ctx.send(punchline)
 
 @tasks.loop(hours=1)
@@ -279,7 +336,9 @@ async def on_message(message):
                 await asyncio.sleep(random.uniform(1.5, 3.0))
                 await message.channel.send(correction)
             for part in parts[1:]:
-                await asyncio.sleep(1.2)
+                await asyncio.sleep(random.uniform(0.6, 1.2))
+                async with message.channel.typing():
+                    await asyncio.sleep(random.uniform(0.4, 0.8) + len(part) * 0.018)
                 await message.channel.send(part)
             # Roasts: 25% chance of sharp follow-up; flirts: 20% chance of flustered follow-up; others: 8%
             if is_roast and random.random() < 0.25:
