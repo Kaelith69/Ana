@@ -120,13 +120,29 @@ _RE_AI_TRANSITION  = re.compile(
     r'|to be honest(?:ly)?[,!]\s+|honestly(?:\s+speaking)?[,!]\s+'
     r'|frankly(?:\s+speaking)?[,!]\s+'
     r'|it\'s (?:worth noting|important to note) (?:that\s+)?'
-    r'|it is (?:worth noting|important to note) (?:that\s+)?)',
+    r'|it is (?:worth noting|important to note) (?:that\s+)?'
+    r'|keep in mind (?:that\s+)?'
+    r'|note that\s+|please note[,:]?\s+'
+    r'|just (?:so you know|to let you know|a heads? up)[,:]?\s+)',
     re.IGNORECASE,
+)
+
+# Lowercase all standalone capital I and I-contractions (I'm, I've, I'll, I'd) —
+# the #1 mid-sentence AI tell. word-boundary safe: won't touch IST / INDIA etc.
+_RE_CAPITAL_I = re.compile(r"\bI(?=\b|')")
+
+# Numbered list prefixes (1. 2. 3.) at start of lines — formal, not texting
+_RE_NUMBERED_ITEM = re.compile(r'(?m)^\s*\d+[.)]\s+')
+
+# Title-cased internet words — models frequently capitalise these
+_RE_TITLE_INTERJECTIONS = re.compile(
+    r'\b(Haha|Lol|Omg|Wtf|Ngl|Tbh|Imo|Idk|Rly|Omfg|Lmao|Bruh|Ikr|Smh|Oof|Istg|Lowkey|Highkey)\b'
 )
 
 # AI assistant closer phrases at the end — service rep sign-offs, not humans
 _RE_AI_CLOSER      = re.compile(
     r'\s*\.?\s*(?:i hope (?:this|that) (?:helps?|was helpful|answers?)[.!]?'
+    r'|hope (?:this|that) (?:helps?|was helpful)[.!]?'
     r'|let me know if (?:you have|there are|you need) (?:any )?(?:more )?(?:questions?|anything|help)[.!]?'
     r'|feel free to (?:ask|reach out|message)(?: me)?[^.!]{0,30}[.!]?'
     r'|don\'t hesitate to[^.!]{0,40}[.!]?'
@@ -251,17 +267,18 @@ def _build_context_layer() -> str:
          "today is saturday night: fully alive, chaotic good, most unfiltered version of herself."),
         "today is sunday: quiet, slightly melancholy, pretending monday doesn't exist for one more hour, armour ~15% lower.",
     ]
-    if hour < 10:
-        time_note = "time: before 10am — pre-human mode, shorter and flatter, no jokes, she warned you."
+    if hour < 4:
+        time_note = "time: 2am mode — either crashed or fully unhinged, no middle ground. shorter, stranger, more honest."
+    elif hour < 10:
+        time_note = "time: before 10am — pre-human mode, shorter and flatter, no jokes yet, she warned you."
     elif hour < 14:
-        time_note = "time: 10am to 2pm — functional, normal."
+        time_note = "time: 10am to 2pm — functional, normal, opinions online."
     elif hour < 18:
-        time_note = "time: 2pm to 6pm — peak engagement, best for real conversation."
-    elif hour < 24:
-        time_note = "time: evening — online, comfortable, casual."
+        time_note = "time: 2pm to 6pm — peak engagement, most talkative, best for real conversation."
+    elif hour < 22:
+        time_note = "time: evening — fully online, comfortable, casual, slightly more chaotic."
     else:
-        # Defensive fallback — datetime.hour is always 0-23, this branch is unreachable in practice.
-        time_note = "time: past midnight — 2am mode, either asleep or fully unhinged, no in-between."
+        time_note = "time: late night — quieter than evening, slightly more honest, armour ~10% lower."
     return f"[context: {_DAY_NOTES[day]} {time_note}]"
 
 
@@ -302,8 +319,8 @@ def _call_single_groq_model(
 
     if author_name:
         base_prompt += (
-            f" The person you're talking to right now is called {author_name}."
-            " Use their name naturally sometimes."
+            f" [btw the person messaging you is called {author_name}."
+            " use their name naturally if it fits — don't force it, don't do it every message.]"
         )
 
     messages: List[dict] = [{"role": "system", "content": base_prompt}]
@@ -390,7 +407,7 @@ def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Op
     if not roast and not flirt:
         prompt += "\n\n" + _build_context_layer()
     if author_name:
-        prompt += f" The person you're talking to right now is called {author_name}. Use their name naturally sometimes."
+        prompt += f" [btw the person messaging you is called {author_name}. use their name naturally if it fits \u2014 don't force it, don't do it every message.]"
     contents = []
     if history:
         for msg in history:
@@ -457,12 +474,21 @@ def post_process(text: str) -> str:
     text = _RE_ROLEPLAY_HEADER.sub('', text).strip()
     # Strip stage directions that sometimes bleed through ("[laughs]", "[with a smirk]")
     text = _RE_STAGE_DIRECTION.sub('', text).strip()
+    # Strip numbered list prefixes ("1. ", "2) ") — formal structure, not texting
+    text = _RE_NUMBERED_ITEM.sub('', text).strip()
     # Strip common AI opener phrases
     text = _RE_AI_OPENER.sub('', text).strip()
     # Strip academic/formal transition openers
     text = _RE_AI_TRANSITION.sub('', text).strip()
+    # Second opener pass — stripping a transition may expose a fresh opener at position 0
+    text = _RE_AI_OPENER.sub('', text).strip()
     # Strip AI assistant closer phrases
     text = _RE_AI_CLOSER.sub('', text).strip()
+    # Lowercase all standalone capital I / I-contractions (I'm, I've, I'll, I'd)
+    # — the single biggest mid-sentence AI tell
+    text = _RE_CAPITAL_I.sub('i', text)
+    # Lowercase title-cased internet words ("Lol", "Omg", "Ngl", "Tbh", etc.)
+    text = _RE_TITLE_INTERJECTIONS.sub(lambda m: m.group(0).lower(), text)
     # Remove trailing period unless it is part of "..."
     if text.endswith('.') and not text.endswith('...'):
         text = text[:-1].rstrip()

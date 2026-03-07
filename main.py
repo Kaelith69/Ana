@@ -291,12 +291,21 @@ async def on_message(message):
 
         # Per-user cooldown — roasts always get a reply; otherwise do the "seen" reaction
         if not mentioned and not is_roast and now - _user_last_reply.get(uid, 0) < USER_COOLDOWN:
+            await asyncio.sleep(random.uniform(0.5, 2.5))  # humans don't react instantly
             await message.add_reaction(random.choice(["👀", "💀", "😭"]))
             return
 
         # ~12% chance to just react instead of replying (never on roasts — she always fires back)
         if not mentioned and not is_roast and random.random() < 0.12:
             await message.add_reaction(random.choice(_REACTIONS))
+            _channel_last_reply[cid] = now
+            return
+
+        # ~4% chance of ghost typing — she starts typing then goes quiet
+        # very human: read it, thought about it, decided not to engage
+        if not mentioned and not is_roast and random.random() < 0.04:
+            async with message.channel.typing():
+                await asyncio.sleep(random.uniform(1.5, 4.0))
             _channel_last_reply[cid] = now
             return
 
@@ -331,7 +340,12 @@ async def on_message(message):
             parts = _split_reply(reply)
             # Typo+correction only on non-roast replies (she's not typo-ing when she's mad)
             first_part, correction = _maybe_typo(parts[0]) if not is_roast else (parts[0], None)
-            await message.reply(first_part, mention_author=False)
+            # When mentioned, always reply-thread. Otherwise ~65% reply, ~35% just send into channel.
+            use_reply = mentioned or (random.random() < 0.65)
+            if use_reply:
+                await message.reply(first_part, mention_author=False)
+            else:
+                await message.channel.send(first_part)
             if correction:
                 await asyncio.sleep(random.uniform(1.5, 3.0))
                 await message.channel.send(correction)
