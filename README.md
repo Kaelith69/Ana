@@ -59,7 +59,7 @@ Ana/
 | 🔄 **Triple Fallback** | Groq down? → Gemini Flash Gen1. That down? → Gemini Flash Gen2. All fail? → human-sounding static fallback. Zero silent failures. |
 | 🔥 **Roast Mode** | Insult or mock her and she fires back instantly — bypasses all cooldowns, fast angry typing (0.4–1.2s), 25% chance of a follow-up cutting remark |
 | 💘 **Flirt Mode** | Flirt with her and she responds with an improvised, original pick-up line — bold, cheeky, NSFW-capable; never the same tired one-liners |
-| 🎭 **Human Behaviour** | Proportional typing delays • occasional typo + star-correction • emoji-only reactions (12% of the time) • unprompted follow-up afterthoughts • conversation history window |
+| 🎭 **Human Behaviour** | Proportional typing delays • occasional typo + star-correction • emoji-only reactions (12% of the time) • ghost typing & low-signal skip for realistic pauses • unprompted follow-up afterthoughts • conversation history window |
 | 🧹 **AI Artefact Stripping** | `post_process()` deterministically removes markdown, AI opener phrases ("Sure,", "Of course,"), trailing periods, and capital first letters from every reply |
 | 💬 **Conversation History** | Per-channel sliding window of last 10 messages passed as context to every AI call — she remembers what was just said |
 | 😂 **Dad Jokes** | Live HTTP GET to `icanhazdadjoke.com` on untriggered messages. 15% roll, 60s cooldown, max 3 per day per channel |
@@ -279,7 +279,9 @@ kiss · love you · wanna go out · be mine · dream girl
 
 - **Roasts bypass all cooldowns** — if you insult her, she replies no matter what
 - **12% chance of emoji-only reaction** instead of a text reply on non-roast triggers
-- **4% chance of typo + correction** — sends with a swap-typo then follows with `*word`
+- **~20% low-signal skip** — Ana sometimes ignores messages that are only `lmao`, `omg`, `wow`, `bruh`, etc.
+- **6% ghost typing** — she starts typing then goes quiet; read it, thought about it, decided not to engage
+- **4% chance of typo + correction** — sends with a swap-typo then follows with `*word` (correction only appears ~70% of the time)
 - **Proportional typing delay** — short replies feel fast, long ones feel like she's actually typing
 - **Conversation history** — last 10 messages per channel included as context in every AI call
 - **Follow-up afterthoughts** — 8% chance she sends a rambling follow-up 4–8 seconds later

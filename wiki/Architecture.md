@@ -46,7 +46,7 @@ Owns the `commands.Bot` instance and all event handling. Key responsibilities:
 
 - **Trigger detection** — `TRIGGER_PATTERN`, `ROAST_PATTERN`, `FLIRT_PATTERN` are pre-compiled regexes at module load. `is_roast` and `is_flirt` are detected *before* any cooldown checks so roasts are never silently swallowed.
 - **Cooldown system** — Per-user 25s cooldown (`_user_last_reply` dict) and per-channel 7s cooldown (`_channel_last_reply` dict), both bypassed for roasts. A background `tasks.loop(hours=1)` prunes stale entries to bound memory.
-- **Behaviour simulation** — 12% emoji-only reaction chance, 10% extra reaction overlay on top of replies, 15% low-signal skip, `_maybe_typo()` for 4% typo+correction, proportional typing delay.
+- **Behaviour simulation** — 12% emoji-only reaction chance, 10% extra reaction overlay on top of replies, 20% low-signal skip, `_maybe_typo()` for 4% typo+correction (correction sent ~~70%~~ roughly 70% of the time), 6% ghost-typing, proportional typing delay.
 - **Reply pipeline** — Calls `process_with_nlp` via `asyncio.to_thread` (keeps event loop non-blocking), then splits long replies with `_split_reply()` and sends parts with 1.2s gaps.
 - **Follow-up system** — Three distinct follow-up pools: `_ROAST_FOLLOWUPS` (25% chance), `_FLIRT_FOLLOWUPS` (20% chance), `_FOLLOWUPS` (8% chance).
 - **Conversation history** — `_history: dict[int, deque]` stores last 10 messages per channel and passes them to every AI call.

@@ -35,7 +35,8 @@ CHANNEL_COOLDOWN = 7  # seconds between any replies in the same channel
 
 # Low-signal trigger words — Ana may silently ignore these sometimes
 _LOW_SIGNAL = frozenset({
-    "lmao", "omg", "wow", "bruh", "lol", "haha", "ok", "okay"
+    "lmao", "omg", "wow", "bruh", "lol", "haha", "ok", "okay",
+    "lmaooo", "lmaoo", "omfg", "hahaha", "rofl", "lolol",
 })
 
 # Emoji reactions Ana might use instead of a full reply
@@ -284,9 +285,9 @@ async def on_message(message):
         is_roast = bool(ROAST_PATTERN.search(content))
         is_flirt = not is_roast and bool(FLIRT_PATTERN.search(content))
 
-        # Silently skip ~15% of the time on low-signal words (never skip a roast)
+        # Silently skip ~20% of the time on low-signal words (never skip a roast)
         is_low_signal = not mentioned and bool(words) and words.issubset(_LOW_SIGNAL)
-        if is_low_signal and not is_roast and random.random() < 0.15:
+        if is_low_signal and not is_roast and random.random() < 0.20:
             return
 
         # Channel cooldown — don't pile on if she just replied here (roasts always go through)
@@ -305,9 +306,9 @@ async def on_message(message):
             _channel_last_reply[cid] = now
             return
 
-        # ~4% chance of ghost typing — she starts typing then goes quiet
+        # ~6% chance of ghost typing — she starts typing then goes quiet
         # very human: read it, thought about it, decided not to engage
-        if not mentioned and not is_roast and random.random() < 0.04:
+        if not mentioned and not is_roast and random.random() < 0.06:
             async with message.channel.typing():
                 await asyncio.sleep(random.uniform(1.5, 4.0))
             _channel_last_reply[cid] = now
@@ -350,7 +351,7 @@ async def on_message(message):
                 await message.reply(first_part, mention_author=False)
             else:
                 await message.channel.send(first_part)
-            if correction:
+            if correction and random.random() < 0.70:  # humans don't always catch their own typos
                 await asyncio.sleep(random.uniform(1.5, 3.0))
                 await message.channel.send(correction)
             for part in parts[1:]:

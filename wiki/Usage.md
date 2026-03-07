@@ -145,9 +145,10 @@ These are all the small things that make Ana feel like a real member rather than
 | Behaviour | Details |
 |---|---|
 | **Proportional typing delay** | <60 chars → 0.8–1.8s extra; 60–180 chars → 1.8–3.5s; >180 chars → 3.0–5.0s |
-| **Typo + correction** | ~4% of replies: sends with a character-swap typo, then sends `*word` 1.5–3s later |
+| **Typo + correction** | ~4% of replies: sends with a character-swap typo, then sends `*word` 1.5–3s later (correction only appears ~70% of the time) |
 | **Emoji-only reaction** | ~12% of non-roast triggers: adds a single emoji reaction instead of replying |
-| **Low-signal skip** | ~15% chance to silently ignore messages that are only `lmao`, `omg`, `wow` etc. |
+| **Low-signal skip** | ~20% chance to silently ignore messages that are only `lmao`, `omg`, `wow` etc. |
+| **Ghost typing** | ~6% chance she starts typing then goes quiet — read it, thought about it, decided not to engage |
 | **Follow-up afterthoughts** | 8% (normal), 25% (roast), 20% (flirt) chance of a second message sent 3–8s later |
 | **Conversation history** | Last 10 messages per channel passed as context — Ana remembers what was just said |
 | **Per-user cooldown** | 25s between replies to the same person (bypassed on roasts) |

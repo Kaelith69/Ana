@@ -22,7 +22,7 @@ Per-channel sliding window of last 10 messages (5 exchanges) passed as context o
 Deterministic post-processing on every reply: strips markdown, AI opener phrases, trailing periods, capitalises away from sentence-case.
 
 ### Human-sounding Behavioural Simulation
-Proportional typing delays, 4% typo+correction, 12% emoji-only reactions, 3 follow-up pools with different probabilities, low-signal skip.
+Proportional typing delays, 4% typo+correction, 70% chance correction appears, 12% emoji-only reactions, 3 follow-up pools with different probabilities, 20% low-signal skip, 6% ghost-typing.
 
 ### Raspberry Pi Autostart
 `setup_autostart.sh` — one command installs a systemd service that survives reboots, waits for network, and auto-restarts on crash.

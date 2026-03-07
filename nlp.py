@@ -106,7 +106,9 @@ _RE_AI_OPENER      = re.compile(
     r'|i want to (?:help|clarify|explain)\s+'
     r'|happy to (?:help|assist)[!,.]?\s*'
     r'|glad (?:you asked|to help)[!,.]?\s*'
-    r'|feel free to [a-z ]{1,30}[,!.]?\s+)',
+    r'|feel free to [a-z ]{1,30}[,!.]?\s+'
+    r'|so[,]\s+|well[,]\s+'
+    r'|ok(?:ay)? so\s+)',
     re.IGNORECASE,
 )
 
@@ -147,7 +149,10 @@ _RE_AI_CLOSER      = re.compile(
     r'|feel free to (?:ask|reach out|message)(?: me)?[^.!]{0,30}[.!]?'
     r'|don\'t hesitate to[^.!]{0,40}[.!]?'
     r'|is there anything (?:else|more)(?: i can help(?: you)? with)?[^.!?]{0,30}[.?!]?'
-    r'|(?:any|have any|do you have any) (?:other )?questions?[.?!]?)\s*$',
+    r'|(?:any|have any|do you have any) (?:other )?questions?[.?!]?'
+    r'|does (?:this|that) make sense\??'
+    r'|does this help\??'
+    r'|make sense\?)\s*$',
     re.IGNORECASE,
 )
 
@@ -156,6 +161,12 @@ _RE_STAGE_DIRECTION = re.compile(r'^\[(?:ana\s+)?[^\]]{1,60}\]\s*', re.IGNORECAS
 
 # Roleplay headers like "Ana:" or "Me:" at the very start
 _RE_ROLEPLAY_HEADER = re.compile(r'^(?:ana|anahita|me|her)\s*:\s*', re.IGNORECASE)
+
+# Bullet-point list items ("- item", "* item") — formatted lists are an AI tell, not texting
+_RE_MD_BULLET = re.compile(r'(?m)^\s*[-*]\s+')
+
+# Consecutive spaces — clean up after stripping operations
+_RE_DOUBLE_SPACE = re.compile(r' {2,}')
 
 
 def _find_str(obj) -> Optional[str]:
@@ -207,6 +218,20 @@ FALLBACK_RESPONSES = [
     "i— ok",
     "this is a lot for a tuesday",
     "...sherikkum",
+    "lol imagine",
+    "ok and????",
+    "bold of you",
+    "fair enough i guess",
+    "no thoughts head empty",
+    "mhm",
+    "the audacity honestly",
+    "wait that's a thing that happened",
+    "i have no words. well a few. choosing not.",
+    "okay sure why not",
+    "..okay",
+    "yeah no",
+    "this timeline is wild",
+    "carry on i guess",
 ]
 
 
@@ -476,6 +501,8 @@ def post_process(text: str) -> str:
     text = _RE_STAGE_DIRECTION.sub('', text).strip()
     # Strip numbered list prefixes ("1. ", "2) ") — formal structure, not texting
     text = _RE_NUMBERED_ITEM.sub('', text).strip()
+    # Strip bullet-point list prefixes ("- ", "* ") — structured lists are not texting
+    text = _RE_MD_BULLET.sub('', text).strip()
     # Strip common AI opener phrases
     text = _RE_AI_OPENER.sub('', text).strip()
     # Strip academic/formal transition openers
@@ -489,6 +516,8 @@ def post_process(text: str) -> str:
     text = _RE_CAPITAL_I.sub('i', text)
     # Lowercase title-cased internet words ("Lol", "Omg", "Ngl", "Tbh", etc.)
     text = _RE_TITLE_INTERJECTIONS.sub(lambda m: m.group(0).lower(), text)
+    # Collapse multiple spaces left by any stripping operation
+    text = _RE_DOUBLE_SPACE.sub(' ', text).strip()
     # Remove trailing period unless it is part of "..."
     if text.endswith('.') and not text.endswith('...'):
         text = text[:-1].rstrip()

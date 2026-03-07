@@ -81,6 +81,12 @@ On Railway/Render/Replit, set it in their environment variables UI instead.
 
 ---
 
+## Bot looks like it's ignoring me completely
+
+If she sometimes starts typing and then stops, or just reacts with an emoji and doesn't send text, that's intentional. Ana silently ignores about 20% of "low‑signal" messages (`lmao`, `omg`, `wow`, `bruh`, etc.) and has a ~6% chance of ghost‑typing when she decides not to reply. This is normal behaviour designed to make her feel human. If you want her to reply every time, remove words from `TRIGGER_WORDS` or adjust the probability constants in `main.py`.
+
+---
+
 ## `!joke` gives a non-human response / "idk any rn"
 
 The joke API (`icanhazdadjoke.com`) returned nothing — timeout or rate limit. Try again in a moment. Check reachability:
