@@ -84,7 +84,7 @@ class DadJokeService:
             "anyway",
             "i regret nothing",
             "okay that was bad even for me",
-            "\ud83d\udc80",
+            "💀",
             "i'm hilarious",
             "okay that was free",
             "u laughed. don't lie.",

@@ -206,7 +206,7 @@ FALLBACK_RESPONSES = [
     "whatever that means",
     "i— ok",
     "this is a lot for a tuesday",
-    "...sherikum",
+    "...sherikkum",
 ]
 
 

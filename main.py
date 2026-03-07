@@ -250,7 +250,8 @@ async def _cleanup_cooldowns() -> None:
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
-    _cleanup_cooldowns.start()
+    if not _cleanup_cooldowns.is_running():
+        _cleanup_cooldowns.start()
 
 @bot.event
 async def on_message(message):
@@ -362,17 +363,17 @@ async def on_message(message):
                 await asyncio.sleep(random.uniform(2.5, 5.0))
                 async with message.channel.typing():
                     await asyncio.sleep(random.uniform(0.4, 1.0))
-                    await message.channel.send(random.choice(_ROAST_FOLLOWUPS))
+                await message.channel.send(random.choice(_ROAST_FOLLOWUPS))
             elif is_flirt and random.random() < 0.20:
                 await asyncio.sleep(random.uniform(3.0, 6.0))
                 async with message.channel.typing():
                     await asyncio.sleep(random.uniform(0.5, 1.2))
-                    await message.channel.send(random.choice(_FLIRT_FOLLOWUPS))
+                await message.channel.send(random.choice(_FLIRT_FOLLOWUPS))
             elif not is_roast and not is_flirt and random.random() < 0.08:
                 await asyncio.sleep(random.uniform(4.0, 8.0))
                 async with message.channel.typing():
                     await asyncio.sleep(random.uniform(0.5, 1.5))
-                    await message.channel.send(random.choice(_FOLLOWUPS))
+                await message.channel.send(random.choice(_FOLLOWUPS))
     else:
         await joke_service.maybe_send_joke(message.channel)
 
