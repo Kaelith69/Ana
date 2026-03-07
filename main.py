@@ -12,8 +12,8 @@ from keepalive import start_keepalive
 from nlp import process_with_nlp
 
 TRIGGER_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, TRIGGER_WORDS)) + r')\b', re.IGNORECASE)
-ROAST_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, ROAST_WORDS)) + r')\b', re.IGNORECASE)
-FLIRT_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, FLIRT_WORDS)) + r')\b', re.IGNORECASE)
+ROAST_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, sorted(ROAST_WORDS))) + r')\b', re.IGNORECASE)
+FLIRT_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, sorted(FLIRT_WORDS))) + r')\b', re.IGNORECASE)
 
 intents = discord.Intents.default()
 intents.messages = True
@@ -22,8 +22,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 joke_service = DadJokeService(JOKE_SETTINGS)
 
-# Per-channel conversation history: last 5 exchanges (10 messages)
-_history: dict[int, deque] = defaultdict(lambda: deque(maxlen=10))
+# Per-channel conversation history: last 10 exchanges (20 messages)
+_history: dict[int, deque] = defaultdict(lambda: deque(maxlen=20))
 
 # Per-user last-reply timestamp (user_id -> monotonic time)
 _user_last_reply: dict[int, float] = {}
@@ -234,8 +234,11 @@ async def joke(ctx):
 
 @tasks.loop(hours=1)
 async def _cleanup_cooldowns() -> None:
-    """Periodically prune stale entries from the cooldown dicts to bound memory use."""
+    """Periodically prune stale entries from the cooldown dicts and history to bound memory use."""
     cutoff = asyncio.get_running_loop().time()
+    stale_history = [cid for cid, ts in _channel_last_reply.items() if cutoff - ts > 3600]
+    for cid in stale_history:
+        _history.pop(cid, None)
     stale_users = [uid for uid, ts in _user_last_reply.items() if cutoff - ts > USER_COOLDOWN * 20]
     stale_channels = [cid for cid, ts in _channel_last_reply.items() if cutoff - ts > CHANNEL_COOLDOWN * 20]
     for uid in stale_users:

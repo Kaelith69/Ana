@@ -253,7 +253,7 @@ def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_nam
 
 def _build_context_layer() -> str:
     """Return a short day/time context note reflecting Ana's current mood (uses IST, UTC+5:30)."""
-    now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+    now = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
     hour = now.hour
     day = now.weekday()  # 0 = Monday, 6 = Sunday
     _DAY_NOTES = [
@@ -518,36 +518,36 @@ def normalize_response(raw: Optional[str]) -> Optional[str]:
         try:
             parsed = json.loads(s)
             # If it's a plain string
-            if isinstance(parsed, str):
-                return parsed.strip()
+            if isinstance(parsed, str) and parsed.strip():
+                return post_process(parsed.strip()) or None
             # If dict, prefer common keys
             if isinstance(parsed, dict):
                 for key in ('message', 'response', 'reply', 'text', 'content'):
                     v = parsed.get(key)
                     if isinstance(v, str) and v.strip():
-                        return v.strip()
+                        return post_process(v.strip()) or None
                 r = _find_str(parsed)
-                if r:
-                    return r.strip()
+                if r and r.strip():
+                    return post_process(r.strip()) or None
             # If list, find first string element
             if isinstance(parsed, list):
                 for item in parsed:
                     if isinstance(item, str) and item.strip():
-                        return item.strip()
+                        return post_process(item.strip()) or None
                     if isinstance(item, (dict, list)):
                         r = _find_str(item)
-                        if r:
-                            return r.strip()
+                        if r and r.strip():
+                            return post_process(r.strip()) or None
         except Exception:
             pass
 
     # Try regex for common patterns like "message": "..."
     m = _RE_JSON_MSG_DOUBLE.search(s)
     if m:
-        return m.group(1).strip()
+        return post_process(m.group(1).strip()) or None
     m = _RE_JSON_MSG_ANY.search(s)
     if m:
-        return m.group(1).strip()
+        return post_process(m.group(1).strip()) or None
 
     # Only strip wrapping quotes if the entire string is uniformly quoted (avoids
     # corrupting text that ends with a legitimate mid-string quote)
