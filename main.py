@@ -639,6 +639,16 @@ async def on_message(message):
             except (discord.HTTPException, OSError):
                 pass
 
+        # Claim cooldown slots NOW — before any await that leads to the NLP call.
+        # Without this, concurrent on_message handlers for rapid messages in the same
+        # channel all see stale timestamps, all pass the cooldown check, all start NLP
+        # calls (~console output appears), then all fire send() at once, Discord
+        # rate-limits the burst and the excess replies are silently swallowed.
+        # The late update below overwrites these with the accurate send timestamp.
+        _pre_reserve = asyncio.get_running_loop().time()
+        _channel_last_reply[cid] = _pre_reserve
+        _user_last_reply[uid] = _pre_reserve
+
         # Sanitise display name: strip control chars and context-format chars ([ ] " \)
         # that call_gemini injects as "[name]: text" — prevents prompt injection via display names.
         # Same character set as ref_author sanitisation a few lines below.
@@ -714,8 +724,11 @@ async def on_message(message):
                     "author": author_name,
                 })
                 _history[cid].append({"role": "assistant", "content": reply})
-                _user_last_reply[uid] = now
-                _channel_last_reply[cid] = now
+                # Use the actual current time so the cooldown reflects when the reply
+                # was really sent, not the stale handler-start timestamp in `now`.
+                _sent_at = asyncio.get_running_loop().time()
+                _user_last_reply[uid] = _sent_at
+                _channel_last_reply[cid] = _sent_at
                 global _announcement_channel_id
                 _announcement_channel_id = cid  # persist for sleep/wake announcements
                 # Background: extract personal details from this message and build/update user profile.
