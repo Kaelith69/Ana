@@ -12,6 +12,7 @@ from jokes import DadJokeService
 from keepalive import start_keepalive
 from nlp import process_with_nlp, _api_safe_name
 from profiles import profile_store, extract_profile_info
+from reminders import reminder_store, parse_reminder, generate_wish
 
 TRIGGER_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, TRIGGER_WORDS)) + r')\b', re.IGNORECASE)
 ROAST_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, sorted(ROAST_WORDS))) + r')\b', re.IGNORECASE)
@@ -477,6 +478,80 @@ _JOKE_OUTROS_CMD = [
 ]
 
 
+@bot.command(name="remindme")
+async def remindme(ctx, *, text: str = ""):
+    """Set a reminder. Usage: !remindme <date> <time> <occasion>"""
+    if not text.strip():
+        await ctx.send("tell me what to remind you about — date, time, and what's happening")
+        return
+    async with ctx.typing():
+        reminder = await asyncio.to_thread(
+            parse_reminder,
+            text,
+            ctx.author.id,
+            ctx.author.display_name,
+            ctx.channel.id,
+            GEN2_API_KEY,
+        )
+    if not reminder:
+        await ctx.send("couldn't parse that. try: `!remindme march 15 10am john's birthday`")
+        return
+    # Warn if the reminder is already in the past
+    try:
+        import datetime as _dt
+        _IST_TZ = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
+        reminder_dt = _dt.datetime.fromisoformat(reminder["datetime_ist"]).replace(tzinfo=_IST_TZ)
+        now_ist = _dt.datetime.now(_IST_TZ)
+        if reminder_dt <= now_ist:
+            await ctx.send("that date's already passed — double check and try again")
+            return
+        dt_fmt = reminder_dt.strftime("%d %b %Y at %I:%M %p IST")
+    except Exception:
+        dt_fmt = reminder["datetime_ist"]
+    reminder_store.add(reminder)
+    short_id = reminder["id"][:8]
+    await ctx.send(
+        f"ok set — {reminder['occasion']} on {dt_fmt} "
+        f"\n*(cancel with `!cancelreminder {short_id}`)*"
+    )
+
+
+@bot.command(name="myreminders")
+async def myreminders(ctx):
+    """List your pending reminders."""
+    pending = await asyncio.to_thread(reminder_store.list_pending, ctx.author.id)
+    if not pending:
+        await ctx.send("no reminders set")
+        return
+    lines = ["upcoming reminders:"]
+    for r in pending:
+        try:
+            import datetime as _dt
+            _IST_TZ = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
+            dt = _dt.datetime.fromisoformat(r["datetime_ist"]).replace(tzinfo=_IST_TZ)
+            dt_str = dt.strftime("%d %b %Y %I:%M %p IST")
+        except Exception:
+            dt_str = r["datetime_ist"]
+        short_id = r["id"][:8]
+        lines.append(f"`{short_id}` — {r['occasion']} · {dt_str}")
+    await ctx.send("\n".join(lines))
+
+
+@bot.command(name="cancelreminder")
+async def cancelreminder(ctx, id_prefix: str = ""):
+    """Cancel a pending reminder by its ID prefix. Usage: !cancelreminder <id>"""
+    if not id_prefix.strip():
+        await ctx.send("give me the reminder id — use `!myreminders` to see them")
+        return
+    cancelled = await asyncio.to_thread(
+        reminder_store.cancel, ctx.author.id, id_prefix.strip()
+    )
+    if cancelled:
+        await ctx.send("reminder cancelled")
+    else:
+        await ctx.send("couldn't find that reminder — check `!myreminders`")
+
+
 @bot.command()
 async def joke(ctx):
     punchline = await asyncio.to_thread(joke_service.random_joke)
@@ -527,6 +602,27 @@ async def _ana_sleep() -> None:
         pass
 
 
+@tasks.loop(minutes=1)
+async def _check_reminders() -> None:
+    """Fire due reminders every minute with AI-generated wish/reminder messages."""
+    now_ist = datetime.datetime.now(_IST)
+    due = await asyncio.to_thread(reminder_store.get_due, now_ist)
+    for reminder in due:
+        await asyncio.to_thread(reminder_store.mark_done, reminder["id"])
+        channel = bot.get_channel(reminder["channel_id"])
+        if not isinstance(channel, discord.abc.Messageable):
+            continue
+        msg = await asyncio.to_thread(generate_wish, reminder, GEN2_API_KEY)
+        if not msg:
+            msg = f"hey — reminder: {reminder['occasion']}"
+        try:
+            user = bot.get_user(reminder["user_id"])
+            mention = user.mention if user else f"@{reminder['user_name']}"
+            await channel.send(f"{mention} {msg}")
+        except (discord.HTTPException, OSError) as e:
+            print(f"[reminders] send failed: {e}", file=sys.stderr)
+
+
 @tasks.loop(time=datetime.time(hour=5, minute=30, second=0, tzinfo=_IST))
 async def _ana_wake() -> None:
     """Send a goodmorning message at 05:30 IST."""
@@ -550,6 +646,8 @@ async def on_ready():
         _ana_sleep.start()
     if not _ana_wake.is_running():
         _ana_wake.start()
+    if not _check_reminders.is_running():
+        _check_reminders.start()
 
 @bot.event
 async def on_message(message):
