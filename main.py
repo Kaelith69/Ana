@@ -179,10 +179,6 @@ _FOLLOWUPS = [
 
 _IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
-# Channel IDs where Ana has sent at least one message — used to pick the
-# announcement channel for sleep/wake broadcasts.
-_active_channels: set[int] = set()
-
 
 def _is_sleeping() -> bool:
     """Return True during Ana's sleep window: 00:00–05:29 IST."""
@@ -195,7 +191,11 @@ def _best_channel():
     if not _channel_last_reply:
         return None
     cid = max(_channel_last_reply, key=lambda k: _channel_last_reply[k])
-    return bot.get_channel(cid)
+    ch = bot.get_channel(cid)
+    # Guard: only return the channel if it's actually messageable (not a voice/category channel).
+    if isinstance(ch, discord.abc.Messageable):
+        return ch
+    return None
 
 
 _SLEEP_AFK_RESPONSES = [
@@ -293,6 +293,9 @@ def _split_reply(text: str) -> list[str]:
     for sep in (". ", "! ", "? ", "... ", ", "):
         idx = text.rfind(sep, 0, mid + 40)
         if idx != -1:
+            # Skip if '. ' is the trailing dot of an ellipsis — same guard as post_process.
+            if sep == ". " and idx >= 1 and text[idx - 1] == '.':
+                continue
             cut = idx + len(sep)
             return [p for p in [text[:cut].strip(), text[cut:].strip()] if p]
     return [text]
@@ -539,7 +542,6 @@ async def on_message(message):
             _history[cid].append({"role": "assistant", "content": reply})
             _user_last_reply[uid] = now
             _channel_last_reply[cid] = now
-            _active_channels.add(cid)  # track for sleep/wake announcements
             # Background: extract personal details from this message and build/update user profile.
             # Store the task reference in _bg_tasks so the event loop can't GC it mid-run.
             _task = asyncio.create_task(_update_profile_bg(uid, author_name, resolved_content))
