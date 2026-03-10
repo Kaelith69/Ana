@@ -383,9 +383,11 @@ _SAT_MORNING = "today is saturday morning: slow, do not rush, brunch energy, not
 _SAT_NIGHT   = "today is saturday night: fully alive, chaotic good, most unfiltered version of herself."
 
 
+_IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
 def _build_context_layer() -> str:
     """Return a short day/time context note reflecting Ana's current mood (uses IST, UTC+5:30)."""
-    now = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
+    now = datetime.datetime.now(_IST)
     hour = now.hour
     day = now.weekday()  # 0 = Monday, 6 = Sunday
 
