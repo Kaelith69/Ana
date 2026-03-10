@@ -45,11 +45,56 @@ _LOW_SIGNAL = frozenset({
     "lmaooo", "lmaoo", "omfg", "hahaha", "rofl", "lolol",
 })
 
-# Emoji reactions Ana might use instead of a full reply
-# Note: no heart emojis — system prompt forbids hearts with strangers
-_REACTIONS = ["😭", "💀", "😂", "🙄", "😤", "🫠", "👀", "😮", "🤙",
-              "🤣", "💅", "😩", "🥺", "✨", "🔥", "😳", "🤦", "😵", "🫡",
-              "😬", "🤌", "🤭", "💯", "😑", "🧍", "🤷", "😏", "🫥", "😮\u200d💨", "🙃"]
+# Context-sensitive emoji buckets — no heart emojis (system prompt forbids hearts with strangers)
+_REACT_FUNNY    = ["💀", "😂", "🤣", "😭", "💅", "😩", "🤌"]          # lmao / haha / bruh / that was wild
+_REACT_HYPE     = ["🔥", "✨", "💯", "😤", "🤌"]                       # fire / slay / let's go
+_REACT_SAD      = ["😮‍💨", "🫥", "😑", "😐", "😞", "💀"]             # sad / rough / vent
+_REACT_RELATABLE= ["💯", "😩", "😭", "🙄", "😤", "🫡"]                 # same / mood / real / literally
+_REACT_WEIRD    = ["🤨", "😵", "🫠", "🤭", "👀", "😳"]                 # what / huh / idk / random
+_REACT_CRINGE   = ["😬", "🤦", "🙄", "😐", "💀", "😑"]                 # cringe / gross / yikes / stop
+_REACT_FLIRT    = ["😏", "🙃", "🤭", "😮", "👀"]                        # flirty content
+_REACT_DEFAULT  = ["😭", "💀", "😂", "🙄", "😤", "🫠", "👀", "😮", "🤙",
+                   "🤣", "💅", "😩", "🥺", "✨", "🔥", "😳", "🤦", "😵", "🫡",
+                   "😬", "🤌", "🤭", "💯", "😑", "🧍", "🤷", "😏", "🫥", "😮‍💨", "🙃"]
+
+# Keyword sets used by _pick_reaction.
+# Rules for inclusion: words must be SPECIFIC to that mood and not ultra-common in normal chat.
+# Emoji entries are excluded — they're stripped by re.sub(r'[^\w\s]',...) before matching.
+_WORDS_FUNNY    = frozenset({"lol","lmao","lmaooo","lmaoo","haha","hahaha","funny","bruh",
+                             "wild","omg","omfg","rofl","lolol","unhinged","chaotic"})
+# "letsgo" excluded — never appears as one word; "crazy"/"insane" excluded — fire on negative msgs too
+_WORDS_HYPE     = frozenset({"fire","banger","amazing","dope","goat","lit","slay","slaying","based"})
+_WORDS_SAD      = frozenset({"sad","cry","crying","depressed","miss","hurt","pain",
+                             "rough","vent","tired","exhausted","lonely","alone","upset"})
+# "literally" excluded — appears in virtually every Gen-Z sentence regardless of mood
+_WORDS_RELATABLE= frozenset({"same","mood","real","facts","fr","relatable","ngl","istg"})
+# "what"/"why"/"idk" excluded — ultra-common in normal questions; would mis-fire constantly
+_WORDS_WEIRD    = frozenset({"huh","random","weird","strange","wth","wtf"})
+_WORDS_CRINGE   = frozenset({"cringe","gross","ew","eww","yikes","tragic","awful","cursed","embarrassing"})
+
+
+def _pick_reaction(content: str, is_flirt: bool = False) -> str:
+    """Pick a contextually appropriate emoji reaction.
+
+    Checks message content against mood keyword sets in priority order:
+    flirt > sad > cringe > funny > hype > weird > relatable > default.
+    """
+    if is_flirt:
+        return random.choice(_REACT_FLIRT)
+    words = set(re.sub(r'[^\w\s]', '', content.lower()).split())
+    if words & _WORDS_SAD:
+        return random.choice(_REACT_SAD)
+    if words & _WORDS_CRINGE:
+        return random.choice(_REACT_CRINGE)
+    if words & _WORDS_FUNNY:
+        return random.choice(_REACT_FUNNY)
+    if words & _WORDS_HYPE:
+        return random.choice(_REACT_HYPE)
+    if words & _WORDS_WEIRD:
+        return random.choice(_REACT_WEIRD)
+    if words & _WORDS_RELATABLE:
+        return random.choice(_REACT_RELATABLE)
+    return random.choice(_REACT_DEFAULT)
 
 # Follow-up lines Ana sends after a flirty exchange
 _FLIRT_FOLLOWUPS = [
@@ -562,7 +607,7 @@ async def on_message(message):
         if not mentioned and not is_roast and now - _user_last_reply.get(uid, 0) < USER_COOLDOWN:
             await asyncio.sleep(random.uniform(0.5, 2.5))  # humans don't react instantly
             try:
-                await message.add_reaction(random.choice(["👀", "💀", "😭"]))
+                await message.add_reaction(_pick_reaction(content, is_flirt))
             except (discord.HTTPException, OSError):
                 pass
             return
@@ -570,7 +615,7 @@ async def on_message(message):
         # ~12% chance to just react instead of replying (never on roasts — she always fires back)
         if not mentioned and not is_roast and random.random() < 0.12:
             try:
-                await message.add_reaction(random.choice(_REACTIONS))
+                await message.add_reaction(_pick_reaction(content, is_flirt))
             except (discord.HTTPException, OSError):
                 pass
             _channel_last_reply[cid] = now
@@ -590,7 +635,7 @@ async def on_message(message):
         # ~10% chance to also react on top of reply (skip for roasts — no softening)
         if not mentioned and not is_roast and random.random() < 0.10:
             try:
-                await message.add_reaction(random.choice(_REACTIONS))
+                await message.add_reaction(_pick_reaction(content, is_flirt))
             except (discord.HTTPException, OSError):
                 pass
 
