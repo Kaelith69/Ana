@@ -168,6 +168,31 @@ _RE_MD_BULLET = re.compile(r'(?m)^\s*[-*]\s+')
 # Consecutive spaces — clean up after stripping operations
 _RE_DOUBLE_SPACE = re.compile(r' {2,}')
 
+# Context-injection echoes — strip if the LLM accidentally mirrors our injected [replying to @...] prefix
+_RE_CONTEXT_LEAK = re.compile(r'^\[replying to @[^\]\n]{0,120}\]\s*\n?', re.IGNORECASE)
+
+# Name-prefix echoes — strip if Gemini's "[Name]: " injection leaks into the output itself
+_RE_NAME_PREFIX_ECHO = re.compile(r'^\[[^\]\n]{1,60}\]:\s*', re.IGNORECASE)
+
+# Parenthetical stage directions embedded mid-text — models sometimes insert (laughs), (sighs), etc.
+_RE_PAREN_ACTION = re.compile(
+    r'\s*\((?:laughs?|chuckles?|grinning|grins?|smiles?|smiling|sighs?|nods?|nodding'
+    r'|shrugs?|shrugging|pauses?|pausing|winks?|scoffs?|snorts?|rolls? (?:her )?eyes?'
+    r'|looks? (?:up|away|down|at you)|thinks?|hesitates?|quietly|softly|sarcastically'
+    r'|dryly|sarcastically)[^)]{0,30}\)\s*',
+    re.IGNORECASE,
+)
+
+
+def _api_safe_name(name: str) -> str:
+    """Convert a display name to an API-safe identifier (a-z, A-Z, 0-9, _ only, max 64 chars).
+
+    Required for the OpenAI/Groq 'name' field in chat message objects.
+    """
+    s = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+    s = re.sub(r'_+', '_', s).strip('_')
+    return (s or "user")[:64]
+
 
 def _find_str(obj) -> Optional[str]:
     """Recursively find the first non-empty string inside nested dicts/lists."""
@@ -347,11 +372,24 @@ def _call_single_groq_model(
             f" [btw the person messaging you is called {author_name}."
             " use their name naturally if it fits — don't force it, don't do it every message.]"
         )
+    if not roast and not flirt:
+        base_prompt += (
+            "\n\n[group chat: multiple users are active in this server."
+            " the 'name' field on each message shows who sent it."
+            " reply to the current user, but you have memory of who said what before.]"
+        )
 
     messages: List[dict] = [{"role": "system", "content": base_prompt}]
     if history:
-        messages.extend(history)
-    messages.append({"role": "user", "content": input_text[:1000]})
+        for entry in history:
+            msg: dict = {"role": entry["role"], "content": entry["content"]}
+            if entry["role"] == "user" and entry.get("name"):
+                msg["name"] = entry["name"]
+            messages.append(msg)
+    current_msg: dict = {"role": "user", "content": input_text[:1000]}
+    if author_name:
+        current_msg["name"] = _api_safe_name(author_name)
+    messages.append(current_msg)
 
     kwargs: dict = dict(
         model=model_id,
@@ -431,14 +469,27 @@ def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Op
     prompt = ROAST_PROMPT if roast else (FLIRT_PROMPT if flirt else SYSTEM_PROMPT)
     if not roast and not flirt:
         prompt += "\n\n" + _build_context_layer()
+        prompt += (
+            "\n\n[group chat: multiple users are active in this server."
+            " messages in history show who sent them via a [Name]: prefix."
+            " reply to the current user, but you have memory of who said what before.]"
+        )
     if author_name:
         prompt += f" [btw the person messaging you is called {author_name}. use their name naturally if it fits \u2014 don't force it, don't do it every message.]"
     contents = []
     if history:
         for msg in history:
             role = "model" if msg["role"] == "assistant" else "user"
-            contents.append({"role": role, "parts": [{"text": msg["content"]}]})
-    contents.append({"role": "user", "parts": [{"text": truncated}]})
+            content_text = msg["content"]
+            if role == "user":
+                display = msg.get("author") or msg.get("name")
+                if display:
+                    content_text = f"[{display}]: {content_text}"
+            contents.append({"role": role, "parts": [{"text": content_text}]})
+    current_text = truncated
+    if author_name:
+        current_text = f"[{author_name}]: {current_text}"
+    contents.append({"role": "user", "parts": [{"text": current_text}]})
     data = {
         "contents": contents,
         "generationConfig": {
@@ -495,6 +546,10 @@ def post_process(text: str) -> str:
     text = _RE_MD_UNDERLINE.sub(r'\1', text)
     text = _RE_MD_ITALIC_UNDER.sub(r'\1', text)
     text = text.strip()
+    # Strip context-injection echoes (model mirroring back our [replying to @...] prefix)
+    text = _RE_CONTEXT_LEAK.sub('', text).strip()
+    # Strip name-prefix echoes ([Name]: leaking from Gemini context injection)
+    text = _RE_NAME_PREFIX_ECHO.sub('', text).strip()
     # Strip roleplay headers ("Ana: ...", "Me: ...")
     text = _RE_ROLEPLAY_HEADER.sub('', text).strip()
     # Strip stage directions that sometimes bleed through ("[laughs]", "[with a smirk]")
@@ -503,6 +558,8 @@ def post_process(text: str) -> str:
     text = _RE_NUMBERED_ITEM.sub('', text).strip()
     # Strip bullet-point list prefixes ("- ", "* ") — structured lists are not texting
     text = _RE_MD_BULLET.sub('', text).strip()
+    # Strip embedded parenthetical stage directions: (laughs), (sighs), (rolls eyes), etc.
+    text = _RE_PAREN_ACTION.sub(' ', text).strip()
     # Strip common AI opener phrases
     text = _RE_AI_OPENER.sub('', text).strip()
     # Strip academic/formal transition openers

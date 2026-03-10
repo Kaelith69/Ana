@@ -41,7 +41,8 @@ _LOW_SIGNAL = frozenset({
 
 # Emoji reactions Ana might use instead of a full reply
 _REACTIONS = ["😭", "💀", "😂", "🙄", "❤️", "😤", "🫠", "👀", "😮", "🤙",
-              "🤣", "💅", "😩", "🥺", "✨", "🔥", "😳", "🤦", "😵", "🫡"]
+              "🤣", "💅", "😩", "🥺", "✨", "🔥", "😳", "🤦", "😵", "🫡",
+              "😬", "🤌", "🤭", "💯", "😑", "🫶", "🧍", "🤷"]
 
 # Follow-up lines Ana sends after a flirty exchange
 _FLIRT_FOLLOWUPS = [
@@ -70,6 +71,12 @@ _FLIRT_FOLLOWUPS = [
     "okay i need to log off before i embarrass myself more",
     "don't look at me",
     "this is the last normal thing i'll say tonight",
+    "i blame the hour",
+    "ok we move",
+    "pretend that didn't happen",
+    "this is not representative of my usual behaviour",
+    "i'm going now",
+    "...yeah okay",
 ]
 
 # Sharp follow-up lines Ana sends after firing back at a roast
@@ -151,7 +158,35 @@ _FOLLOWUPS = [
     "ok that was a lot",
     "no but genuinely",
     "anyway ignore the last thing",
+    "actually scratch that",
+    "ok i'm overthinking",
+    "...nevermind lol",
+    "i was going somewhere with that i swear",
+    "okay this isn't going anywhere",
+    "i have no follow-through i'm sorry",
 ]
+
+
+def _sanitize_name_for_api(name: str) -> str:
+    """Return an API-safe participant name: a-z, A-Z, 0-9, underscores only, max 64 chars.
+
+    Required for the OpenAI/Groq 'name' field in chat messages.
+    """
+    sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+    sanitized = re.sub(r'_+', '_', sanitized).strip('_')
+    return (sanitized or "user")[:64]
+
+
+def _resolve_mentions(content: str, message: discord.Message) -> str:
+    """Replace <@USER_ID> Discord mention tokens with human-readable @DisplayName."""
+    if not message.guild or '<@' not in content:
+        return content
+    guild = message.guild  # captured for closure — guaranteed non-None at this point
+    def _replace(m: re.Match) -> str:
+        uid = int(m.group(1))
+        member = guild.get_member(uid)
+        return f"@{member.display_name}" if member else m.group(0)
+    return re.sub(r'<@!?(\d+)>', _replace, content)
 
 
 def _maybe_typo(text: str) -> tuple[str, str | None]:
@@ -319,10 +354,45 @@ async def on_message(message):
             await message.add_reaction(random.choice(_REACTIONS))
 
         author_name = message.author.display_name
+
+        # Resolve <@USER_ID> tokens to readable names before sending to NLP
+        resolved_content = _resolve_mentions(message.content, message)
+
+        # If this message is a Discord reply, inject the referenced message as context so
+        # Ana knows who is being addressed / talked about — fixes group-chat confusion
+        text_to_process = resolved_content
+        if message.reference:
+            ref_msg = None
+            if isinstance(message.reference.resolved, discord.Message):
+                ref_msg = message.reference.resolved
+            elif message.reference.message_id:
+                # Reference not yet in cache — fetch it (graceful fallback)
+                try:
+                    ref_msg = await message.channel.fetch_message(message.reference.message_id)
+                except (discord.NotFound, discord.HTTPException):
+                    pass
+            if ref_msg:
+                # Sanitize ref fields — prevent prompt injection from crafted content or display names
+                ref_author = re.sub(r'[\r\n\t\[\]"\\]', ' ', ref_msg.author.display_name).strip()[:50]
+                ref_raw = _resolve_mentions((ref_msg.content or "")[:200], ref_msg)
+                ref_text = re.sub(r'[\r\n\t\[\]"\\]', ' ', ref_raw).strip()[:200]
+                if ref_text:
+                    text_to_process = (
+                        f"[replying to @{ref_author}: \"{ref_text}\"]\n{resolved_content}"
+                    )
+
         history = list(_history[cid])
-        
+
+        # Simulate reading the message before typing — humans don't react at network speed.
+        # Proportional to message length; roasts fire back faster (she's already mad).
+        if is_roast:
+            read_delay = random.uniform(0.2, 0.7)
+        else:
+            read_delay = random.uniform(0.5, 1.2) + min(len(resolved_content) * 0.004, 1.8)
+        await asyncio.sleep(read_delay)
+
         async with message.channel.typing():
-            reply = await asyncio.to_thread(process_with_nlp, message.content, history, author_name, is_roast, is_flirt)
+            reply = await asyncio.to_thread(process_with_nlp, text_to_process, history, author_name, is_roast, is_flirt)
             # Roasts: fast angry typing (0.4-1.2s). Others: proportional to reply length.
             if is_roast:
                 extra = random.uniform(0.4, 1.2)
@@ -338,7 +408,12 @@ async def on_message(message):
                 extra = random.uniform(0.5, 1.5)
             await asyncio.sleep(extra)
         if reply:
-            _history[cid].append({"role": "user", "content": message.content})
+            _history[cid].append({
+                "role": "user",
+                "content": text_to_process,
+                "name": _sanitize_name_for_api(author_name),
+                "author": author_name,
+            })
             _history[cid].append({"role": "assistant", "content": reply})
             _user_last_reply[uid] = now
             _channel_last_reply[cid] = now
