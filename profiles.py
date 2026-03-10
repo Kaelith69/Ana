@@ -155,8 +155,14 @@ class ProfileStore:
         safe = _safe_filename(display_name)
         fpath = os.path.join(_PROFILES_DIR, f"{safe}.json")
         if os.path.exists(fpath):
-            # Name collision with a different user — append last 4 digits of id
-            fpath = os.path.join(_PROFILES_DIR, f"{safe}_{user_id % 10000}.json")
+            # Name collision — try last-4-digits suffix; if that's also taken by a
+            # *different* user, fall back to the full user_id (guaranteed unique).
+            fallback = os.path.join(_PROFILES_DIR, f"{safe}_{user_id % 10000}.json")
+            if os.path.exists(fallback):
+                existing_id = _load_json(fallback).get("_id")
+                if existing_id is not None and existing_id != user_id:
+                    fallback = os.path.join(_PROFILES_DIR, f"{safe}_{user_id}.json")
+            fpath = fallback
         self._cache[user_id] = fpath
         return fpath
 

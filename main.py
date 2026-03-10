@@ -594,6 +594,18 @@ async def on_message(message):
         is_roast = bool(ROAST_PATTERN.search(content))
         is_flirt = not is_roast and bool(FLIRT_PATTERN.search(content))
 
+        # Compute these early — needed by both the extraction task below and the NLP path.
+        author_name = re.sub(r'[\r\n\t\[\]"\\]', ' ', message.author.display_name).strip()[:50] or "user"
+        resolved_content = _resolve_mentions(message.content or "", message)
+
+        # Schedule background profile extraction for ALL triggered messages — not just text
+        # replies. extract_profile_info silently skips short/empty content (<15 chars).
+        # Placing this before the return branches ensures personal info is never lost just
+        # because Ana chose to react, ghost-type, or was within a cooldown window.
+        _bg_task = asyncio.create_task(_update_profile_bg(uid, author_name, resolved_content))
+        _bg_tasks.add(_bg_task)
+        _bg_task.add_done_callback(_bg_tasks.discard)
+
         # Silently skip ~20% of the time on low-signal words (never skip a roast)
         is_low_signal = not mentioned and bool(words) and words.issubset(_LOW_SIGNAL)
         if is_low_signal and not is_roast and random.random() < 0.20:
@@ -649,16 +661,8 @@ async def on_message(message):
         _channel_last_reply[cid] = _pre_reserve
         _user_last_reply[uid] = _pre_reserve
 
-        # Sanitise display name: strip control chars and context-format chars ([ ] " \)
-        # that call_gemini injects as "[name]: text" — prevents prompt injection via display names.
-        # Same character set as ref_author sanitisation a few lines below.
-        author_name = re.sub(r'[\r\n\t\[\]"\\]', ' ', message.author.display_name).strip()[:50] or "user"
-
         # Load any profile data we already have for this user — passed to NLP for context
         user_profile_context = await asyncio.to_thread(profile_store.format_for_context, uid)
-
-        # Resolve <@USER_ID> tokens to readable names before sending to NLP
-        resolved_content = _resolve_mentions(message.content or "", message)
 
         # If this message is a Discord reply, inject the referenced message as context so
         # Ana knows who is being addressed / talked about — fixes group-chat confusion
@@ -731,11 +735,6 @@ async def on_message(message):
                 _channel_last_reply[cid] = _sent_at
                 global _announcement_channel_id
                 _announcement_channel_id = cid  # persist for sleep/wake announcements
-                # Background: extract personal details from this message and build/update user profile.
-                # Store the task reference in _bg_tasks so the event loop can't GC it mid-run.
-                _task = asyncio.create_task(_update_profile_bg(uid, author_name, resolved_content))
-                _bg_tasks.add(_task)
-                _task.add_done_callback(_bg_tasks.discard)
                 parts = _split_reply(reply)
                 # Typo+correction only on non-roast replies (she's not typo-ing when she's mad)
                 first_part, correction = _maybe_typo(parts[0]) if not is_roast else (parts[0], None)
