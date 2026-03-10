@@ -46,9 +46,10 @@ _LOW_SIGNAL = frozenset({
 })
 
 # Emoji reactions Ana might use instead of a full reply
-_REACTIONS = ["😭", "💀", "😂", "🙄", "❤️", "😤", "🫠", "👀", "😮", "🤙",
+# Note: no heart emojis — system prompt forbids hearts with strangers
+_REACTIONS = ["😭", "💀", "😂", "🙄", "😤", "🫠", "👀", "😮", "🤙",
               "🤣", "💅", "😩", "🥺", "✨", "🔥", "😳", "🤦", "😵", "🫡",
-              "😬", "🤌", "🤭", "💯", "😑", "🫶", "🧍", "🤷"]
+              "😬", "🤌", "🤭", "💯", "😑", "🧍", "🤷", "😏", "🫥", "😮\u200d💨", "🙃"]
 
 # Follow-up lines Ana sends after a flirty exchange
 _FLIRT_FOLLOWUPS = [
@@ -83,6 +84,16 @@ _FLIRT_FOLLOWUPS = [
     "this is not representative of my usual behaviour",
     "i'm going now",
     "...yeah okay",
+    "okay that was a lot from me. moving on.",
+    "don't use that against me",
+    "ok i take it back. no i don't.",
+    "we're not discussing this further",
+    "aiyyo okay fine. i said it.",
+    "don't read into it. okay maybe you can. a little.",
+    "that came out wrong and also completely right",
+    "okay anyway where were we",
+    "i'm logging off spiritually",
+    "this is why i don't talk",
 ]
 
 # Sharp follow-up lines Ana sends after firing back at a roast
@@ -99,7 +110,7 @@ _ROAST_FOLLOWUPS = [
     "try harder next time",
     "ur so cooked rn",
     "lmaooo byeee",
-    "the disrespect will not be tolerated",
+    "the disrespect. noted.",
     "anyway",
     "stay mad",
     "ok moving on from u",
@@ -131,7 +142,7 @@ _FOLLOWUPS = [
     "ok nvm lmao",
     "i take that back",
     "ok that came out wrong",
-    "nm nm nm",
+    "nvm nvm nvm",
     "ok but also",
     "wait no",
     "..wait",
@@ -170,6 +181,18 @@ _FOLLOWUPS = [
     "i was going somewhere with that i swear",
     "okay this isn't going anywhere",
     "i have no follow-through i'm sorry",
+    "ok wait no that came out like—",
+    "aiyyo nvm",
+    "literally why did i say that",
+    "nm ignore that",
+    "i think i meant something else",
+    "okay that's not what i was going to say",
+    "moving on before i make it worse",
+    "ok forget the last message",
+    "...you know what",
+    "i should not have said that out loud",
+    "that was unhinged of me",
+    "ok i've moved on already",
 ]
 
 
@@ -211,11 +234,16 @@ def _best_channel():
 
 
 _SLEEP_AFK_RESPONSES = [
-    "ana afk — sleeping. try again after 5:30am.",
-    "she's asleep. go sleep bitch.",
-    "zzz. afk till 5:30am.",
-    "asleep. not available rn.",
-    "ana: sleeping. not taking questions.",
+    "i'm literally asleep rn",
+    "zzz",
+    "asleep. come back after 5:30.",
+    "i cannot with you rn. sleeping.",
+    "not available. sleeping.",
+    "...sleeping bro",
+    "it's the middle of the night what do you want",
+    "asleep. bye.",
+    "i'm offline till morning",
+    "do not disturb. genuinely.",
 ]
 
 _GOODNIGHT_LINES = [
