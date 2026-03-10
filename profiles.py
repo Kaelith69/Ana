@@ -285,8 +285,15 @@ def extract_profile_info(text: str, api_key: Optional[str]) -> dict:
                 break
         if not raw or raw == "{}":
             return {}
-        # Strip markdown fences in case the model wraps its JSON
-        raw = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw, flags=re.MULTILINE).strip()
+        # Strip markdown fences in case the model wraps its JSON.
+        # Use targeted per-line stripping instead of MULTILINE re.sub to avoid
+        # accidentally stripping backtick sequences inside JSON string values.
+        lines = raw.splitlines()
+        if lines and re.match(r'^```(?:json)?\s*$', lines[0], re.IGNORECASE):
+            lines = lines[1:]
+        if lines and re.match(r'^```\s*$', lines[-1]):
+            lines = lines[:-1]
+        raw = '\n'.join(lines).strip()
         parsed = json.loads(raw)
         if isinstance(parsed, dict):
             return parsed

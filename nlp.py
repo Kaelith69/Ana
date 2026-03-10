@@ -460,16 +460,16 @@ def _call_single_groq_model(
     if not completion.choices:
         return None
 
-    content = completion.choices[0].message.content
-    if content is None:
+    msg_content = completion.choices[0].message.content
+    if msg_content is None:
         raw = None
-    elif isinstance(content, str):
-        raw = content
+    elif isinstance(msg_content, str):
+        raw = msg_content
     else:
         try:
-            raw = json.dumps(content)
+            raw = json.dumps(msg_content)
         except Exception:
-            raw = str(content)
+            raw = str(msg_content)
 
     reply = normalize_response(raw)
     if reply:
@@ -735,7 +735,7 @@ def normalize_response(raw: Optional[str]) -> Optional[str]:
     s = s.strip()
     if len(s) >= 2 and s[0] == s[-1] and s[0] in ('"', "'"):
         s = s[1:-1].strip()
-    return post_process(s) if s else None
+    return post_process(s) or None
 
 
 if __name__ == "__main__":

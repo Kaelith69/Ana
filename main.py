@@ -400,9 +400,12 @@ async def _ana_sleep() -> None:
     ch = _best_channel()
     if ch is None:
         return
-    async with ch.typing():
-        await asyncio.sleep(random.uniform(0.8, 1.8))
-    await ch.send(random.choice(_GOODNIGHT_LINES))
+    try:
+        async with ch.typing():
+            await asyncio.sleep(random.uniform(0.8, 1.8))
+        await ch.send(random.choice(_GOODNIGHT_LINES))
+    except (discord.HTTPException, OSError):
+        pass
 
 
 @tasks.loop(time=datetime.time(hour=5, minute=30, second=0, tzinfo=_IST))
@@ -411,9 +414,12 @@ async def _ana_wake() -> None:
     ch = _best_channel()
     if ch is None:
         return
-    async with ch.typing():
-        await asyncio.sleep(random.uniform(1.0, 2.0))
-    await ch.send(random.choice(_GOODMORNING_LINES))
+    try:
+        async with ch.typing():
+            await asyncio.sleep(random.uniform(1.0, 2.0))
+        await ch.send(random.choice(_GOODMORNING_LINES))
+    except (discord.HTTPException, OSError):
+        pass
 
 
 @bot.event
@@ -449,7 +455,10 @@ async def on_message(message):
         # No LLM calls are made; a static AFK message is sent instead.
         if _is_sleeping():
             await asyncio.sleep(random.uniform(0.4, 1.2))
-            await message.channel.send(random.choice(_SLEEP_AFK_RESPONSES))
+            try:
+                await message.channel.send(random.choice(_SLEEP_AFK_RESPONSES))
+            except (discord.HTTPException, OSError):
+                pass
             return
 
         now = asyncio.get_running_loop().time()
@@ -476,26 +485,38 @@ async def on_message(message):
         # Per-user cooldown — roasts always get a reply; otherwise do the "seen" reaction
         if not mentioned and not is_roast and now - _user_last_reply.get(uid, 0) < USER_COOLDOWN:
             await asyncio.sleep(random.uniform(0.5, 2.5))  # humans don't react instantly
-            await message.add_reaction(random.choice(["👀", "💀", "😭"]))
+            try:
+                await message.add_reaction(random.choice(["👀", "💀", "😭"]))
+            except (discord.HTTPException, OSError):
+                pass
             return
 
         # ~12% chance to just react instead of replying (never on roasts — she always fires back)
         if not mentioned and not is_roast and random.random() < 0.12:
-            await message.add_reaction(random.choice(_REACTIONS))
+            try:
+                await message.add_reaction(random.choice(_REACTIONS))
+            except (discord.HTTPException, OSError):
+                pass
             _channel_last_reply[cid] = now
             return
 
         # ~6% chance of ghost typing — she starts typing then goes quiet
         # very human: read it, thought about it, decided not to engage
         if not mentioned and not is_roast and random.random() < 0.06:
-            async with message.channel.typing():
-                await asyncio.sleep(random.uniform(1.5, 4.0))
+            try:
+                async with message.channel.typing():
+                    await asyncio.sleep(random.uniform(1.5, 4.0))
+            except (discord.HTTPException, OSError):
+                pass
             _channel_last_reply[cid] = now
             return
 
         # ~10% chance to also react on top of reply (skip for roasts — no softening)
         if not mentioned and not is_roast and random.random() < 0.10:
-            await message.add_reaction(random.choice(_REACTIONS))
+            try:
+                await message.add_reaction(random.choice(_REACTIONS))
+            except (discord.HTTPException, OSError):
+                pass
 
         author_name = message.author.display_name
 
@@ -538,80 +559,87 @@ async def on_message(message):
             read_delay = random.uniform(0.2, 0.7)
         else:
             read_delay = random.uniform(0.5, 1.2) + min(len(resolved_content) * 0.004, 1.8)
-        await asyncio.sleep(read_delay)
+        try:
+            await asyncio.sleep(read_delay)
 
-        async with message.channel.typing():
-            reply = await asyncio.to_thread(
-                process_with_nlp,
-                text_to_process, history, author_name, is_roast, is_flirt,
-                user_profile_context,
-            )
-            # Roasts: fast angry typing (0.4-1.2s). Others: proportional to reply length.
-            if is_roast:
-                extra = random.uniform(0.4, 1.2)
-            elif reply:
-                length = len(reply)
-                if length < 60:
-                    extra = random.uniform(0.8, 1.8)
-                elif length < 180:
-                    extra = random.uniform(1.8, 3.5)
+            async with message.channel.typing():
+                reply = await asyncio.to_thread(
+                    process_with_nlp,
+                    text_to_process, history, author_name, is_roast, is_flirt,
+                    user_profile_context,
+                )
+                # Roasts: fast angry typing (0.4-1.2s). Others: proportional to reply length.
+                if is_roast:
+                    extra = random.uniform(0.4, 1.2)
+                elif reply:
+                    length = len(reply)
+                    if length < 60:
+                        extra = random.uniform(0.8, 1.8)
+                    elif length < 180:
+                        extra = random.uniform(1.8, 3.5)
+                    else:
+                        extra = random.uniform(3.0, 5.0)
                 else:
-                    extra = random.uniform(3.0, 5.0)
-            else:
-                extra = random.uniform(0.5, 1.5)
-            await asyncio.sleep(extra)
-        if reply:
-            _history[cid].append({
-                "role": "user",
-                "content": text_to_process,
-                "name": _sanitize_name_for_api(author_name),
-                "author": author_name,
-            })
-            _history[cid].append({"role": "assistant", "content": reply})
-            _user_last_reply[uid] = now
-            _channel_last_reply[cid] = now
-            global _announcement_channel_id
-            _announcement_channel_id = cid  # persist for sleep/wake announcements
-            # Background: extract personal details from this message and build/update user profile.
-            # Store the task reference in _bg_tasks so the event loop can't GC it mid-run.
-            _task = asyncio.create_task(_update_profile_bg(uid, author_name, resolved_content))
-            _bg_tasks.add(_task)
-            _task.add_done_callback(_bg_tasks.discard)
-            parts = _split_reply(reply)
-            # Typo+correction only on non-roast replies (she's not typo-ing when she's mad)
-            first_part, correction = _maybe_typo(parts[0]) if not is_roast else (parts[0], None)
-            # When mentioned, always reply-thread. Otherwise ~65% reply, ~35% just send into channel.
-            use_reply = mentioned or (random.random() < 0.65)
-            if use_reply:
-                await message.reply(first_part, mention_author=False)
-            else:
-                await message.channel.send(first_part)
-            if correction and random.random() < 0.70:  # humans don't always catch their own typos
-                await asyncio.sleep(random.uniform(1.5, 3.0))
-                await message.channel.send(correction)
-            for part in parts[1:]:
-                await asyncio.sleep(random.uniform(0.6, 1.2))
-                async with message.channel.typing():
-                    await asyncio.sleep(random.uniform(0.4, 0.8) + len(part) * 0.018)
-                await message.channel.send(part)
-            # Roasts: 25% chance of sharp follow-up; flirts: 20% chance of flustered follow-up; others: 8%
-            if is_roast and random.random() < 0.25:
-                await asyncio.sleep(random.uniform(2.5, 5.0))
-                async with message.channel.typing():
-                    await asyncio.sleep(random.uniform(0.4, 1.0))
-                await message.channel.send(random.choice(_ROAST_FOLLOWUPS))
-            elif is_flirt and random.random() < 0.20:
-                await asyncio.sleep(random.uniform(3.0, 6.0))
-                async with message.channel.typing():
-                    await asyncio.sleep(random.uniform(0.5, 1.2))
-                await message.channel.send(random.choice(_FLIRT_FOLLOWUPS))
-            elif not is_roast and not is_flirt and random.random() < 0.08:
-                await asyncio.sleep(random.uniform(4.0, 8.0))
-                async with message.channel.typing():
-                    await asyncio.sleep(random.uniform(0.5, 1.5))
-                await message.channel.send(random.choice(_FOLLOWUPS))
+                    extra = random.uniform(0.5, 1.5)
+                await asyncio.sleep(extra)
+            if reply:
+                _history[cid].append({
+                    "role": "user",
+                    "content": text_to_process,
+                    "name": _sanitize_name_for_api(author_name),
+                    "author": author_name,
+                })
+                _history[cid].append({"role": "assistant", "content": reply})
+                _user_last_reply[uid] = now
+                _channel_last_reply[cid] = now
+                global _announcement_channel_id
+                _announcement_channel_id = cid  # persist for sleep/wake announcements
+                # Background: extract personal details from this message and build/update user profile.
+                # Store the task reference in _bg_tasks so the event loop can't GC it mid-run.
+                _task = asyncio.create_task(_update_profile_bg(uid, author_name, resolved_content))
+                _bg_tasks.add(_task)
+                _task.add_done_callback(_bg_tasks.discard)
+                parts = _split_reply(reply)
+                # Typo+correction only on non-roast replies (she's not typo-ing when she's mad)
+                first_part, correction = _maybe_typo(parts[0]) if not is_roast else (parts[0], None)
+                # When mentioned, always reply-thread. Otherwise ~65% reply, ~35% just send into channel.
+                use_reply = mentioned or (random.random() < 0.65)
+                if use_reply:
+                    await message.reply(first_part, mention_author=False)
+                else:
+                    await message.channel.send(first_part)
+                if correction and random.random() < 0.70:  # humans don't always catch their own typos
+                    await asyncio.sleep(random.uniform(1.5, 3.0))
+                    await message.channel.send(correction)
+                for part in parts[1:]:
+                    await asyncio.sleep(random.uniform(0.6, 1.2))
+                    async with message.channel.typing():
+                        await asyncio.sleep(random.uniform(0.4, 0.8) + len(part) * 0.018)
+                    await message.channel.send(part)
+                # Roasts: 25% chance of sharp follow-up; flirts: 20% chance of flustered follow-up; others: 8%
+                if is_roast and random.random() < 0.25:
+                    await asyncio.sleep(random.uniform(2.5, 5.0))
+                    async with message.channel.typing():
+                        await asyncio.sleep(random.uniform(0.4, 1.0))
+                    await message.channel.send(random.choice(_ROAST_FOLLOWUPS))
+                elif is_flirt and random.random() < 0.20:
+                    await asyncio.sleep(random.uniform(3.0, 6.0))
+                    async with message.channel.typing():
+                        await asyncio.sleep(random.uniform(0.5, 1.2))
+                    await message.channel.send(random.choice(_FLIRT_FOLLOWUPS))
+                elif not is_roast and not is_flirt and random.random() < 0.08:
+                    await asyncio.sleep(random.uniform(4.0, 8.0))
+                    async with message.channel.typing():
+                        await asyncio.sleep(random.uniform(0.5, 1.5))
+                    await message.channel.send(random.choice(_FOLLOWUPS))
+        except (discord.HTTPException, OSError):
+            pass
     else:
-        await joke_service.maybe_send_joke(message.channel)
+        if not _is_sleeping():
+            try:
+                await joke_service.maybe_send_joke(message.channel)
+            except (discord.HTTPException, OSError):
+                pass
 
 def main():
     if not DISCORD_TOKEN:
