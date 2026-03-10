@@ -392,7 +392,11 @@ def _call_single_groq_model(
 
     messages: List[dict] = [{"role": "system", "content": base_prompt}]
     if history:
-        for entry in history:
+        # The deque can rotate so the oldest *user* entry is evicted, leaving an
+        # assistant message at position 0.  APIs require the first non-system
+        # message to be from "user" — skip any leading assistant entries.
+        start = next((i for i, e in enumerate(history) if e["role"] == "user"), len(history))
+        for entry in history[start:]:
             msg: dict = {"role": entry["role"], "content": entry["content"]}
             if entry["role"] == "user" and entry.get("name"):
                 msg["name"] = entry["name"]
@@ -493,7 +497,10 @@ def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Op
         prompt += f"\n\n{user_profile}"
     contents = []
     if history:
-        for msg in history:
+        # Gemini requires contents to start with a "user" turn — skip any leading
+        # "assistant" entries that can appear when the history deque rotates.
+        start = next((i for i, e in enumerate(history) if e["role"] == "user"), len(history))
+        for msg in history[start:]:
             role = "model" if msg["role"] == "assistant" else "user"
             content_text = msg["content"]
             if role == "user":

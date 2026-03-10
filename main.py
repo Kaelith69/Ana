@@ -367,15 +367,19 @@ async def joke(ctx):
 async def _cleanup_cooldowns() -> None:
     """Periodically prune stale entries from the cooldown dicts and history to bound memory use."""
     now = asyncio.get_running_loop().time()
-    stale_history = [cid for cid, ts in _channel_last_reply.items() if now - ts > 3600]
-    for cid in stale_history:
-        _history.pop(cid, None)
     stale_users = [uid for uid, ts in _user_last_reply.items() if now - ts > USER_COOLDOWN * 20]
     stale_channels = [cid for cid, ts in _channel_last_reply.items() if now - ts > CHANNEL_COOLDOWN * 20]
     for uid in stale_users:
         del _user_last_reply[uid]
     for cid in stale_channels:
+        # Clean history at the same threshold so no entries are orphaned in _history
+        # after the channel is dropped from _channel_last_reply.
+        _history.pop(cid, None)
         del _channel_last_reply[cid]
+    # Safety net: prune any history entries whose channel is no longer tracked
+    # (e.g. from a previous run where cleanup was interrupted mid-cycle).
+    for cid in [c for c in list(_history.keys()) if c not in _channel_last_reply]:
+        _history.pop(cid, None)
 
 
 @tasks.loop(time=datetime.time(hour=0, minute=0, second=0, tzinfo=_IST))
