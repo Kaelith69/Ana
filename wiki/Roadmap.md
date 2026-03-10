@@ -4,6 +4,35 @@ What's been built, what's coming, and what's probably not happening.
 
 ---
 
+## Shipped (v5.0.0)
+
+### Multi-User Group Chat Awareness
+Ana now knows who is talking to her in a group channel. `<@USER_ID>` mentions are resolved to real display names before any AI call. Discord reply-threads inject the referenced message as context (`[replying to @Name: "..."]`). Per-speaker history attribution: every history entry carries the speaker's name so the model always knows who said what.
+
+### Reading Delay
+Before showing the typing indicator, Ana pauses to "read" the message: 0.2–0.7s for roasts, 0.5–3s (proportional to message length) for normal messages. Makes her feel like she actually read the message before responding.
+
+### Stage Direction & Artefact Stripping
+Three new `post_process()` passes: `_RE_CONTEXT_LEAK` strips any `[replying to @…]` prefix the model echoes back; `_RE_NAME_PREFIX_ECHO` strips `[Name]:` emission from Gemini; `_RE_PAREN_ACTION` strips `(laughs)`, `(sighs)`, `(rolls eyes)` etc.
+
+### Group Chat System Prompt
+Dedicated `GROUP CHAT` section in `SYSTEM_PROMPT` instructs the model to respond to the person, not the room; reference others by name when natural; stay out of conversations not addressed to her; never address "everyone" or "the group".
+
+### Expanded Behaviour Pools
+`_REACTIONS` expanded with 8 new emojis; `_FOLLOWUPS` and `_FLIRT_FOLLOWUPS` each expanded with 6 new lines.
+
+---
+
+## Shipped (v4.0.0)
+
+### 4-Model Groq Waterfall
+Groq primary backend upgraded from a single model to a prioritised 4-model waterfall: `moonshotai/kimi-k2-instruct` (primary) → `meta-llama/llama-3.3-70b-versatile` → `meta-llama/llama-4-scout-17b-16e-instruct` → `qwen/qwen3-32b`. Each model has its own temperature, top_p, max_tokens, and response patch in `MODEL_SETTINGS`.
+
+### Per-Model Settings
+`MODEL_SETTINGS` dict in `config.py` — each Groq model independently configured. Per-model `patch` allows normalising quirks in model output (e.g. Qwen 3 thinking tokens).
+
+---
+
 ## Shipped (v3.0.0)
 
 ### Roast Mode
@@ -34,7 +63,7 @@ Documented env var template committed to the repo — no more guessing what keys
 
 ## Shipped (v2.0.0)
 
-- Triple AI fallback chain (Groq → Gemini Gen1 → Gemini Gen2 → static)
+- AI fallback chain (Groq → Gemini Gen1 → Gemini Gen2 → static)
 - 70+ trigger word list with multilingual greetings and cultural events
 - Dad joke system with configurable probability, cooldown, and daily cap
 - Flask keepalive on `:8080`

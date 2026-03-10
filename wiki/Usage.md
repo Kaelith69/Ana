@@ -144,30 +144,61 @@ These are all the small things that make Ana feel like a real member rather than
 
 | Behaviour | Details |
 |---|---|
+| **Reading delay** | Before typing starts: 0.2–0.7s (roast) or 0.5–3s proportional to message length (normal). Simulates reading before replying. |
 | **Proportional typing delay** | <60 chars → 0.8–1.8s extra; 60–180 chars → 1.8–3.5s; >180 chars → 3.0–5.0s |
 | **Typo + correction** | ~4% of replies: sends with a character-swap typo, then sends `*word` 1.5–3s later (correction only appears ~70% of the time) |
 | **Emoji-only reaction** | ~12% of non-roast triggers: adds a single emoji reaction instead of replying |
 | **Low-signal skip** | ~20% chance to silently ignore messages that are only `lmao`, `omg`, `wow` etc. |
 | **Ghost typing** | ~6% chance she starts typing then goes quiet — read it, thought about it, decided not to engage |
 | **Follow-up afterthoughts** | 8% (normal), 25% (roast), 20% (flirt) chance of a second message sent 3–8s later |
-| **Conversation history** | Last 10 messages per channel passed as context — Ana remembers what was just said |
+| **Conversation history** | Last 10 messages per channel passed as context with per-speaker attribution — Ana knows who said what |
+| **Group chat context** | Responds to the person, not the room. Never recaps what someone said. Stays out of conversations not addressed to her. |
 | **Per-user cooldown** | 25s between replies to the same person (bypassed on roasts) |
 | **Per-channel cooldown** | 7s between any replies in a channel (bypassed on roasts) |
 | **"Seen" reaction** | During per-user cooldown: adds 👀 💀 😭 instead of replying |
 
 ---
 
-## How AI Replies Work
+## Group Chat & Multi-User Awareness
+
+Ana is designed for active group channels where multiple people are talking at once.
+
+**Mention resolution** — Discord sends mentions as raw `<@USER_ID>` tokens. Ana resolves all mentions to real display names before passing text to the AI, so the model sees `@Kælith` instead of `<@123456789>`.
+
+**Reply-thread context** — When someone replies to another message, Ana fetches that referenced message and prepends it as context:
+```
+[replying to @UserA: "original message here"]
+Actual message from UserB
+```
+This means Ana always knows *who they're replying to* and *what was originally said*.
+
+**Per-speaker history** — Every entry in the conversation history carries the speaker's name. The AI sees `[UserA]: text` and `[UserB]: text` — not anonymous blobs. Groq receives them via the `name` field on each message object.
+
+**Group chat instructions** — A dedicated `GROUP CHAT` section in the system prompt tells the model to:
+- Respond to the person, not the room
+- Reference others by name when natural
+- Stay out when two people are talking to each other
+- Never recap what someone just said
+- Never address "everyone" or "the group" or "the server"
+
+---
+
+
 
 When a trigger is detected, Ana runs:
 
-1. **Input prep** — message passed to `process_with_nlp()`, truncated at 1000 chars. Author name sanitised (strips newlines, max 50 chars) to prevent prompt injection via crafted display names.
+1. **Input prep** — `_resolve_mentions()` replaces `<@ID>` tokens with display names. If the message is a Discord reply, referenced message is fetched and prepended as `[replying to @Name: "..."]`. Text is truncated at 1000 chars. Author name sanitised to prevent prompt injection.
 2. **Mode selection** — `ROAST_PROMPT`, `FLIRT_PROMPT`, or `SYSTEM_PROMPT` chosen based on detected mode
-3. **Groq first** — Llama-4 Scout, temperature 1.1 (normal) / 1.3 (roast), max 200 tokens
-4. **Gemini Gen1 fallback** — `gemini-1.5-flash-latest`, temperature 1.2 / 1.4 (roast), max 200 tokens
-5. **Gemini Gen2 fallback** — `gemini-2.5-flash-lite`, same settings
-6. **Static fallback** — random choice from a pool of human-sounding short phrases
-7. **`post_process()`** — strips markdown, AI opener phrases, trailing periods, capitalised first letter
+3. **Reading delay** — Before the typing indicator: 0.2–0.7s (roast) or 0.5–3s proportional to message length
+4. **Groq waterfall** — Tries each model in order until one succeeds:
+   - Kimi K2 (`moonshotai/kimi-k2-instruct`) — temp 0.85 normal / ~1.1 roast
+   - Llama 3.3 70B (`meta-llama/llama-3.3-70b-versatile`) — temp 0.82
+   - Llama 4 Scout (`meta-llama/llama-4-scout-17b-16e-instruct`) — temp 0.88
+   - Qwen 3 32B (`qwen/qwen3-32b`) — temp 0.82; all max 200 tokens
+5. **Gemini Gen1 fallback** — `gemini-1.5-flash-latest`, temperature 1.2 / 1.4 (roast), max 200 tokens
+6. **Gemini Gen2 fallback** — `gemini-2.5-flash-lite`, same settings
+7. **Static fallback** — random choice from a pool of human-sounding short phrases
+8. **`post_process()`** — strips markdown, AI openers, context-injection echoes, name-prefix echoes, stage-direction parens `(laughs)`, trailing periods, capitalised first letter
 
 ### Static fallback pool (sample)
 ```

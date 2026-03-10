@@ -12,7 +12,7 @@
 
 *Ana started as a simple AI reply bot. She's grown into something that regularly fools people into thinking there's a real, very online, chaotic 20-something in the server. She has opinions. She fires back when insulted. She flirts. She gets distracted mid-thought. She's the bit.*
 
-Ana is a Python Discord bot wired to three AI backends — Groq Llama-4 as the primary engine, with dual Gemini Flash fallbacks. She's built to be indistinguishable from a human server member: proportional typing delays, occasional typo-then-correction, a distinct roast mode that bypasses all cooldowns when someone's being rude, a flirt mode with improvised NSFW-capable pick-up lines, emoji reactions, unprompted follow-up messages, and a conversation history window so she remembers what was just said. On untriggered messages she has a configurable 15% chance of dropping a live-fetched dad joke. A Flask keepalive on port 8080 keeps her alive on any hosting platform.
+Ana is a Python Discord bot wired to a cascading AI waterfall — Kimi K2 as the primary engine via Groq, backed by Llama 3.3 70B, Llama 4 Scout, and Qwen 3 32B in sequence, then dual Gemini Flash fallbacks. She's built to be indistinguishable from a human server member: reading delay before typing, proportional typing delays, occasional typo-then-correction, a distinct roast mode that bypasses all cooldowns when someone's being rude, a flirt mode with improvised NSFW-capable pick-up lines, multi-user group chat awareness with per-speaker conversation history, Discord mention resolution, reply-thread context injection, emoji reactions, unprompted follow-up messages, and AI artefact stripping on every reply. On untriggered messages she has a configurable 15% chance of dropping a live-fetched dad joke. A Flask keepalive on port 8080 keeps her alive on any hosting platform.
 
 ---
 
@@ -22,7 +22,7 @@ Ana is a Python Discord bot wired to three AI backends — Groq Llama-4 as the p
 
 ![Python](https://img.shields.io/badge/Python-3.10+-7C3AED?style=for-the-badge&logo=python&logoColor=white)
 ![discord.py](https://img.shields.io/badge/discord.py-Latest-2563EB?style=for-the-badge&logo=discord&logoColor=white)
-![Groq](https://img.shields.io/badge/Groq-Llama--4-06B6D4?style=for-the-badge&logoColor=white)
+![Groq](https://img.shields.io/badge/Groq-Kimi--K2-06B6D4?style=for-the-badge&logoColor=white)
 ![Flask](https://img.shields.io/badge/Flask-3.x-7C3AED?style=for-the-badge&logo=flask&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-2563EB?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-Alive%20(barely)-06B6D4?style=for-the-badge)
@@ -55,13 +55,14 @@ Ana/
 
 | Feature | What it actually does |
 |---|---|
-| 🤖 **AI Replies** | Trigger-word scan → `asyncio.to_thread` → Groq Llama-4 generates a short, casual reply without blocking the event loop |
-| 🔄 **Triple Fallback** | Groq down? → Gemini Flash Gen1. That down? → Gemini Flash Gen2. All fail? → human-sounding static fallback. Zero silent failures. |
-| 🔥 **Roast Mode** | Insult or mock her and she fires back instantly — bypasses all cooldowns, fast angry typing (0.4–1.2s), 25% chance of a follow-up cutting remark |
+| 🤖 **AI Replies** | Trigger-word scan → `asyncio.to_thread` → Groq waterfall (Kimi K2 → Llama 3.3 70B → Llama 4 Scout → Qwen 3 32B) generates a short, casual reply without blocking the event loop |
+| 🔄 **Multi-Model Waterfall** | 4 Groq models in priority order, then Gemini Gen1, then Gemini Gen2, then human-sounding static fallback. Zero silent failures across 6 backends. |
+| 🔥 **Roast Mode** | Insult or mock her and she fires back instantly — bypasses all cooldowns, reading delay 0.2–0.7s, fast angry typing (0.4–1.2s), 25% chance of a follow-up cutting remark |
 | 💘 **Flirt Mode** | Flirt with her and she responds with an improvised, original pick-up line — bold, cheeky, NSFW-capable; never the same tired one-liners |
-| 🎭 **Human Behaviour** | Proportional typing delays • occasional typo + star-correction • emoji-only reactions (12% of the time) • ghost typing & low-signal skip for realistic pauses • unprompted follow-up afterthoughts • conversation history window |
-| 🧹 **AI Artefact Stripping** | `post_process()` deterministically removes markdown, AI opener phrases ("Sure,", "Of course,"), trailing periods, and capital first letters from every reply |
-| 💬 **Conversation History** | Per-channel sliding window of last 10 messages passed as context to every AI call — she remembers what was just said |
+| 🎭 **Human Behaviour** | Reading delay before typing • proportional typing delays • occasional typo + star-correction • emoji-only reactions (12% of the time) • ghost typing & low-signal skip • unprompted follow-up afterthoughts |
+| 👥 **Group Chat Awareness** | Responds to the person, not the room • Discord `<@ID>` mention resolution to real names • reply-thread context injection • per-speaker conversation history so she always knows who said what |
+| 🧹 **AI Artefact Stripping** | `post_process()` strips markdown, AI opener phrases, context-injection echoes, name-prefix echoes, stage-direction parens `(laughs)`, trailing periods, and capital first letters from every reply |
+| 💬 **Conversation History** | Per-channel sliding window of last 10 messages with per-speaker attribution — passed to every AI call so she knows who said what |
 | 😂 **Dad Jokes** | Live HTTP GET to `icanhazdadjoke.com` on untriggered messages. 15% roll, 60s cooldown, max 3 per day per channel |
 | 🎯 **100+ Trigger Words** | Greetings, emotions, celebrations, cultural holidays, Gen-Z slang, multilingual phrases, roast words, and flirt words — all configurable |
 | ⚙️ **Fully Configurable** | `JOKE_CHANCE`, `JOKE_COOLDOWN`, `SYSTEM_PROMPT`, all API keys — every runtime value overridable via `.env` |
@@ -120,7 +121,7 @@ Ana:  ...
 
 Ana runs as a **single Python process** with two concurrent execution contexts: the `discord.py` async event loop handles all Discord I/O and command dispatch, while Flask runs in a separate daemon thread for the keepalive endpoint. AI calls in `nlp.py` are deliberately synchronous (Groq and Google SDKs) and are offloaded to the default thread pool executor via `asyncio.to_thread()` — this keeps latency-sensitive Discord events from waiting on an HTTP round-trip to an inference API.
 
-The triple-fallback design exists because free-tier AI APIs have unpredictable availability. Rather than crashing or going silent on an API error, each provider is wrapped in a try/except that immediately hands off to the next. The static fallback at the end means Ana *always* says something, even if that something is "Cool story, bro." — which, depending on the conversation, might be the most accurate response anyway.
+The multi-model waterfall exists because free-tier AI APIs have unpredictable availability. Rather than crashing or going silent on an API error, each model is wrapped in a try/except that immediately hands off to the next. The 4-model Groq waterfall (Kimi K2 → Llama 3.3 70B → Llama 4 Scout → Qwen 3 32B) maximises the chance of a high-quality response, with two Gemini fallbacks and a static pool ensuring Ana *always* says something.
 
 ---
 
@@ -137,30 +138,35 @@ Primary data path through a triggered message:
 ```
 Discord on_message
   └─ Ignore bots / handle ! commands
-       └─ Detect is_roast / is_flirt / is_trigger
-            │
-            ├─ ROAST ──► bypass ALL cooldowns
-            │              → process_with_nlp(roast=True)    [temp 1.3/1.4]
-            │              → post_process() strips AI artefacts
-            │              → fast reply (0.4–1.2s typing delay)
-            │              → 25% chance of _ROAST_FOLLOWUPS
-            │
-            ├─ FLIRT ──► normal cooldowns apply
-            │              → process_with_nlp(flirt=True)
-            │              → post_process()
-            │              → 20% chance of _FLIRT_FOLLOWUPS
-            │
-            ├─ TRIGGER ► cooldown checks
-            │    ├─ 12% chance → emoji reaction only
-            │    ├─ 4%  chance → send with typo → send *correction
-            │    └─ process_with_nlp()  [Groq → Gemini Gen1 → Gen2 → static]
-            │              → post_process()
-            │              → proportional typing delay (0.8–5.0s)
-            │              → 8% chance of _FOLLOWUPS
-            │
-            └─ NO TRIGGER → maybe_send_joke()
-                              ├─ cooldown / rand / daily-cap → skip
-                              └─ GET icanhazdadjoke.com → channel.send(joke)
+       └─ _resolve_mentions()  ← <@ID> tokens → @DisplayName
+            └─ Inject reply-thread context (if Discord reply)
+                 └─ Detect is_roast / is_flirt / is_trigger
+                      │
+                      ├─ ROAST ──► bypass ALL cooldowns
+                      │              → reading delay 0.2–0.7s
+                      │              → process_with_nlp(roast=True)    [temp ~1.1]
+                      │              → post_process() strips AI artefacts
+                      │              → fast reply (0.4–1.2s typing delay)
+                      │              → 25% chance of _ROAST_FOLLOWUPS
+                      │
+                      ├─ FLIRT ──► normal cooldowns apply
+                      │              → reading delay 0.5–3s
+                      │              → process_with_nlp(flirt=True)
+                      │              → post_process()
+                      │              → 20% chance of _FLIRT_FOLLOWUPS
+                      │
+                      ├─ TRIGGER ► cooldown checks
+                      │    ├─ 12% chance → emoji reaction only
+                      │    ├─ 4%  chance → send with typo → send *correction
+                      │    └─ reading delay 0.5–3s
+                      │         → process_with_nlp()  [Groq waterfall → Gemini x2 → static]
+                      │         → post_process()
+                      │         → proportional typing delay (0.8–5.0s)
+                      │         → 8% chance of _FOLLOWUPS
+                      │
+                      └─ NO TRIGGER → maybe_send_joke()
+                                        ├─ cooldown / rand / daily-cap → skip
+                                        └─ GET icanhazdadjoke.com → channel.send(joke)
 ```
 
 ---
@@ -171,7 +177,7 @@ Discord on_message
 
 - **Python 3.10+** — check with `python --version`
 - **Discord bot token** — [Discord Developer Portal](https://discord.com/developers/applications). Enable **Message Content Intent** or Ana can't read messages.
-- **Groq API key** — [console.groq.com](https://console.groq.com). Free tier works. Uses `llama-4-scout-17b-16e-instruct`.
+- **Groq API key** — [console.groq.com](https://console.groq.com). Free tier works. Uses a 4-model waterfall: Kimi K2 → Llama 3.3 70B → Llama 4 Scout → Qwen 3 32B.
 - **Google AI API key(s)** — [aistudio.google.com](https://aistudio.google.com). Two keys for fallbacks (`GEN1_API_KEY`, `GEN2_API_KEY`). You can use the same value for both to share quota.
 
 ### Steps
@@ -347,12 +353,9 @@ Ana processes messages **only when triggered** — she's not reading everything 
 ## 🗺️ Roadmap
 
 **Conversations:**
-- [ ] Memory/context — multi-turn so Ana doesn't forget she just answered this
+- [x] Memory/context — per-channel history with per-speaker attribution (who said what, passed to every AI call)
+- [x] Per-user rate limiting — 25s per-user cooldown stops one person from monopolising her
 - [ ] Per-server personality config — server admins set her vibe
-
-**Commands:**
-- [ ] Slash commands — `/joke`, `/ask`, `/config` (prefix commands are fine but dated)
-- [ ] Rate limiting per user — stop one person from interrogating her all shift
 
 **Jokes:**
 - [ ] Async joke pre-fetching — background loop so `!joke` responds instantly
