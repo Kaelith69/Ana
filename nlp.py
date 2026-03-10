@@ -184,7 +184,7 @@ _RE_PAREN_ACTION = re.compile(
     r'\s*\((?:laughs?|chuckles?|grinning|grins?|smiles?|smiling|sighs?|nods?|nodding'
     r'|shrugs?|shrugging|pauses?|pausing|winks?|scoffs?|snorts?|rolls? (?:her )?eyes?'
     r'|looks? (?:up|away|down|at you)|thinks?|hesitates?|quietly|softly|sarcastically'
-    r'|dryly|sarcastically)[^)]{0,30}\)\s*',
+    r'|dryly)[^)]{0,30}\)\s*',
     re.IGNORECASE,
 )
 
@@ -259,7 +259,6 @@ FALLBACK_RESPONSES = [
     "i have no words. well a few. choosing not.",
     "okay sure why not",
     "..okay",
-    "yeah no",
     "this timeline is wild",
     "carry on i guess",
 ]

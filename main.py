@@ -179,6 +179,12 @@ _FOLLOWUPS = [
 
 _IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
+# Persistent channel ID for sleep/wake announcements.
+# Unlike _channel_last_reply, this is NEVER pruned by the cleanup task —
+# so _ana_wake() can always find the last active channel even after the
+# 5.5h idle sleep window empties _channel_last_reply.
+_announcement_channel_id: int | None = None
+
 
 def _is_sleeping() -> bool:
     """Return True during Ana's sleep window: 00:00–05:29 IST."""
@@ -188,9 +194,15 @@ def _is_sleeping() -> bool:
 
 def _best_channel():
     """Return the most recently active TextChannel Ana has spoken in, or None."""
-    if not _channel_last_reply:
+    # Prefer _channel_last_reply (most recent activity) but fall back to the
+    # persistent _announcement_channel_id which is never pruned by cleanup.
+    cid: int | None = None
+    if _channel_last_reply:
+        cid = max(_channel_last_reply, key=lambda k: _channel_last_reply[k])
+    elif _announcement_channel_id is not None:
+        cid = _announcement_channel_id
+    if cid is None:
         return None
-    cid = max(_channel_last_reply, key=lambda k: _channel_last_reply[k])
     ch = bot.get_channel(cid)
     # Guard: only return the channel if it's actually messageable (not a voice/category channel).
     if isinstance(ch, discord.abc.Messageable):
@@ -542,6 +554,8 @@ async def on_message(message):
             _history[cid].append({"role": "assistant", "content": reply})
             _user_last_reply[uid] = now
             _channel_last_reply[cid] = now
+            global _announcement_channel_id
+            _announcement_channel_id = cid  # persist for sleep/wake announcements
             # Background: extract personal details from this message and build/update user profile.
             # Store the task reference in _bg_tasks so the event loop can't GC it mid-run.
             _task = asyncio.create_task(_update_profile_bg(uid, author_name, resolved_content))
