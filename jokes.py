@@ -9,6 +9,42 @@ import requests
 
 from config import JokeSettings
 
+# Static string pools — defined at module level to avoid re-allocating on every call.
+_JOKE_INTROS = [
+    "okay wait i need to share this",
+    "i've been holding onto this one",
+    "don't judge me",
+    "idk why this got me but",
+    "ok bear with me",
+    "not me laughing at a dad joke again",
+    "u didn't hear this from me but",
+    "context: i've been awake too long",
+    "wait okay this is bad but it's funny",
+    "i hate that i find this funny",
+    "someone sent me this and now it's ur problem",
+    "okay this is terrible and i love it",
+    "ok i'm sorry in advance",
+    "don't @ me",
+]
+
+_JOKE_OUTROS = [
+    "i know i know",
+    "...okay i'm embarrassed",
+    "don't judge me",
+    "the delivery was what got me",
+    "ok moving on",
+    "anyway",
+    "i regret nothing",
+    "okay that was bad even for me",
+    "💀",
+    "i'm hilarious",
+    "okay that was free",
+    "u laughed. don't lie.",
+    "ok well. that happened.",
+    "no thoughts just that joke",
+]
+
+
 class DadJokeService:
     def __init__(self, settings: JokeSettings) -> None:
         self.settings = settings
@@ -57,39 +93,6 @@ class DadJokeService:
         if not joke:
             self.daily_joke_count -= 1  # refund daily quota
             return
-
-        _JOKE_INTROS = [
-            "okay wait i need to share this",
-            "i've been holding onto this one",
-            "don't judge me",
-            "idk why this got me but",
-            "ok bear with me",
-            "not me laughing at a dad joke again",
-            "u didn't hear this from me but",
-            "context: i've been awake too long",
-            "wait okay this is bad but it's funny",
-            "i hate that i find this funny",
-            "someone sent me this and now it's ur problem",
-            "okay this is terrible and i love it",
-            "ok i'm sorry in advance",
-            "don't @ me",
-        ]
-        _JOKE_OUTROS = [
-            "i know i know",
-            "...okay i'm embarrassed",
-            "don't judge me",
-            "the delivery was what got me",
-            "ok moving on",
-            "anyway",
-            "i regret nothing",
-            "okay that was bad even for me",
-            "💀",
-            "i'm hilarious",
-            "okay that was free",
-            "u laughed. don't lie.",
-            "ok well. that happened.",
-            "no thoughts just that joke",
-        ]
 
         use_intro = random.random() < 0.75
         use_outro = random.random() < 0.50

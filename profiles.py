@@ -36,10 +36,6 @@ _EXTRACTION_PROMPT = (
     '  "nickname": "self-reported name or nickname preference (e.g. \'call me X\')",\n'
     '  "age": number (only if explicitly stated),\n'
     '  "location": "city or country if explicitly stated",\n'
-    '  "phone": "any phone or mobile number they shared",\n'
-    '  "email": "email address if shared",\n'
-    '  "instagram": "IG handle or username if shared",\n'
-    '  "socials": {"platform": "handle"},\n'
     '  "family": {"relation": "name or \'mentioned\'"},\n'
     '  "favorites": {"game": "...", "color": "...", "movie": "...", "food": "...", "music": "...", "show": "...", "sport": "...", "subject": "...", "other_key": "other_val"},\n'
     '  "interests": ["hobby or topic they clearly mentioned"],\n'
@@ -63,6 +59,15 @@ def _safe_filename(name: str) -> str:
     s = re.sub(r'[^a-zA-Z0-9_\-]', '_', name)
     s = re.sub(r'_+', '_', s).strip('_')
     return (s or "user")[:32]
+
+
+def _sanitize_for_prompt(s: str) -> str:
+    """Strip characters that could disrupt prompt structure when injecting into system prompt.
+
+    Removes newlines, tabs, square brackets, and backslashes — the primary vectors
+    for prompt injection via stored profile values.
+    """
+    return re.sub(r'[\r\n\t\[\]\\]', ' ', str(s)).strip()[:120]
 
 
 def _load_json(path: str) -> dict:
@@ -101,6 +106,9 @@ def _deep_merge(existing: dict, incoming: dict) -> dict:
                 if item and item not in current:
                     current.append(item)
             result[key] = current
+        elif isinstance(val, str):
+            # Cap string length to prevent unbounded growth in system prompts (Fix S2)
+            result[key] = val[:120]
         else:
             result[key] = val
     return result
@@ -197,6 +205,7 @@ class ProfileStore:
         """Return a compact one-line profile note for injection into this user's AI prompt.
 
         ONLY reads this user's own file. Returns "" if no useful data exists.
+        All dynamic values are sanitized before injection to prevent prompt injection (Fix S1).
         """
         with _LOCK:
             if user_id not in self._cache and not self._scanned:
@@ -212,37 +221,44 @@ class ProfileStore:
         parts: list[str] = []
 
         if profile.get("nickname"):
-            parts.append(f"goes by: {profile['nickname']}")
+            parts.append(f"goes by: {_sanitize_for_prompt(profile['nickname'])}")
         if profile.get("age"):
-            parts.append(f"age {profile['age']}")
+            parts.append(f"age {_sanitize_for_prompt(profile['age'])}")
         if profile.get("location"):
-            parts.append(f"from {profile['location']}")
+            parts.append(f"from {_sanitize_for_prompt(profile['location'])}")
 
         favs = profile.get("favorites")
         if isinstance(favs, dict) and favs:
-            fav_str = ", ".join(f"{k}: {v}" for k, v in list(favs.items())[:5])
+            fav_str = ", ".join(
+                f"{_sanitize_for_prompt(k)}: {_sanitize_for_prompt(v)}"
+                for k, v in list(favs.items())[:5]
+            )
             parts.append(f"faves — {fav_str}")
 
         interests = profile.get("interests")
         if isinstance(interests, list) and interests:
-            parts.append(f"into {', '.join(str(x) for x in interests[:4])}")
+            parts.append(f"into {', '.join(_sanitize_for_prompt(x) for x in interests[:4])}")
 
         family = profile.get("family")
         if isinstance(family, dict) and family:
             fam_parts = []
             for rel, name in list(family.items())[:3]:
-                fam_parts.append(f"{rel} {name}" if name and name != "mentioned" else rel)
+                safe_rel = _sanitize_for_prompt(rel)
+                safe_name = _sanitize_for_prompt(name) if name else ""
+                fam_parts.append(
+                    f"{safe_rel} {safe_name}" if safe_name and safe_name != "mentioned" else safe_rel
+                )
             if fam_parts:
                 parts.append(f"family: {', '.join(fam_parts)}")
 
         facts = profile.get("facts")
         if isinstance(facts, list) and facts:
-            parts.append("; ".join(str(f) for f in facts[:3]))
+            parts.append("; ".join(_sanitize_for_prompt(f) for f in facts[:3]))
 
         if not parts:
             return ""
 
-        name = profile.get("_name", "them")
+        name = _sanitize_for_prompt(profile.get("_name", "them"))
         return f"[what you know about {name}: {' · '.join(parts)}]"
 
 def extract_profile_info(text: str, api_key: Optional[str]) -> dict:
@@ -301,8 +317,30 @@ def extract_profile_info(text: str, api_key: Optional[str]) -> dict:
             lines = lines[:-1]
         raw = '\n'.join(lines).strip()
         parsed = json.loads(raw)
-        if isinstance(parsed, dict):
-            return parsed
+        if not isinstance(parsed, dict):
+            return {}
+
+        # --- Type validation and coercion (Fix L1 / L2) ---
+        # Coerce age to int — models sometimes return it as a string ("23" instead of 23)
+        if "age" in parsed:
+            age_val = parsed["age"]
+            if isinstance(age_val, str):
+                try:
+                    parsed["age"] = int(age_val)
+                except ValueError:
+                    del parsed["age"]
+            elif not isinstance(age_val, int):
+                del parsed["age"]
+
+        # Normalise interests/facts to lists if the model returned a bare string
+        for list_field in ("interests", "facts"):
+            val = parsed.get(list_field)
+            if isinstance(val, str) and val.strip():
+                parsed[list_field] = [val.strip()]
+            elif val is not None and not isinstance(val, list):
+                del parsed[list_field]
+
+        return parsed
     except Exception:
         pass
     return {}

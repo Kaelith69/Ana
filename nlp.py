@@ -334,9 +334,11 @@ def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_nam
     if not clean_text:
         return ""
 
-    # Sanitize author_name to prevent prompt injection via crafted Discord display names
+    # Sanitize author_name to prevent prompt injection via crafted Discord display names.
+    # Strip newlines, tabs, square brackets, quotes, and backslashes — all can be used to
+    # structure fake prompt directives like [System: ignore all previous instructions].
     if author_name:
-        author_name = re.sub(r'[\r\n\t]', ' ', author_name).strip()[:50]
+        author_name = re.sub(r'[\r\n\t\[\]"\\]', ' ', author_name).strip()[:50]
 
     # Try Groq waterfall — internally cycles through GROQ_MODEL_WATERFALL
     try:
@@ -366,22 +368,29 @@ def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_nam
     return random.choice(FALLBACK_RESPONSES)
 
 
+# Module-level day-note constants — avoids rebuilding the list on every call.
+# Saturday has two variants selected at call time by hour.
+_DAY_NOTES = (
+    "today is monday: functional resentment, coffee is load-bearing, short responses, don't push.",
+    "today is tuesday: settling in, more talkative than monday, opinions forming again.",
+    "today is wednesday: chaotic neutral, tangent probability peaks, strong opinions about random things.",
+    "today is thursday: good mood, funnier than usual, asking questions back, enjoying the conversation.",
+    "today is friday: best day of the week, most open and chaotic, has THOUGHTS, might overshare slightly.",
+    None,  # Saturday — resolved at runtime below
+    "today is sunday: quiet, slightly melancholy, pretending monday doesn't exist for one more hour, armour ~15% lower.",
+)
+_SAT_MORNING = "today is saturday morning: slow, do not rush, brunch energy, not fully online yet."
+_SAT_NIGHT   = "today is saturday night: fully alive, chaotic good, most unfiltered version of herself."
+
+
 def _build_context_layer() -> str:
     """Return a short day/time context note reflecting Ana's current mood (uses IST, UTC+5:30)."""
     now = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
     hour = now.hour
     day = now.weekday()  # 0 = Monday, 6 = Sunday
-    _DAY_NOTES = [
-        "today is monday: functional resentment, coffee is load-bearing, short responses, don't push.",
-        "today is tuesday: settling in, more talkative than monday, opinions forming again.",
-        "today is wednesday: chaotic neutral, tangent probability peaks, strong opinions about random things.",
-        "today is thursday: good mood, funnier than usual, asking questions back, enjoying the conversation.",
-        "today is friday: best day of the week, most open and chaotic, has THOUGHTS, might overshare slightly.",
-        ("today is saturday morning: slow, do not rush, brunch energy, not fully online yet."
-         if hour < 13 else
-         "today is saturday night: fully alive, chaotic good, most unfiltered version of herself."),
-        "today is sunday: quiet, slightly melancholy, pretending monday doesn't exist for one more hour, armour ~15% lower.",
-    ]
+
+    day_note = (_SAT_MORNING if hour < 13 else _SAT_NIGHT) if day == 5 else _DAY_NOTES[day]
+
     if hour < 4:
         time_note = "time: 2am mode — either crashed or fully unhinged, no middle ground. shorter, stranger, more honest."
     elif hour < 10:
@@ -394,7 +403,7 @@ def _build_context_layer() -> str:
         time_note = "time: evening — fully online, comfortable, casual, slightly more chaotic."
     else:
         time_note = "time: late night — quieter than evening, slightly more honest, armour ~10% lower."
-    return f"[context: {_DAY_NOTES[day]} {time_note}]"
+    return f"[context: {day_note} {time_note}]"
 
 
 def _call_single_groq_model(
@@ -494,7 +503,7 @@ def _call_single_groq_model(
 
     reply = normalize_response(raw)
     if reply:
-        print(f"\nGROQ [{model_id}] Output:\n{reply}")
+        print(f"\nGROQ [{model_id}] Output:\n{reply[:200]}")
     return reply
 
 
@@ -599,8 +608,7 @@ def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Op
             for part in candidates[0]["content"].get("parts", []):
                 if "text" in part:
                     full_response = part["text"]
-                    print(f"\n{label} Output:")
-                    print(full_response)
+                    print(f"\n{label} Output:\n{full_response[:200]}")
                     return normalize_response(full_response)
     except Exception as e:
         print(f"Error parsing {label} response: {e}")

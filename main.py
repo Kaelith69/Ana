@@ -10,7 +10,7 @@ from discord.ext import commands, tasks
 from config import DISCORD_TOKEN, JOKE_SETTINGS, TRIGGER_WORDS, ROAST_WORDS, FLIRT_WORDS, GEN2_API_KEY
 from jokes import DadJokeService
 from keepalive import start_keepalive
-from nlp import process_with_nlp
+from nlp import process_with_nlp, _api_safe_name
 from profiles import profile_store, extract_profile_info
 
 TRIGGER_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, TRIGGER_WORDS)) + r')\b', re.IGNORECASE)
@@ -343,16 +343,6 @@ _GOODMORNING_LINES = [
 ]
 
 
-def _sanitize_name_for_api(name: str) -> str:
-    """Return an API-safe participant name: a-z, A-Z, 0-9, underscores only, max 64 chars.
-
-    Required for the OpenAI/Groq 'name' field in chat messages.
-    """
-    sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', name)
-    sanitized = re.sub(r'_+', '_', sanitized).strip('_')
-    return (sanitized or "user")[:64]
-
-
 def _resolve_mentions(content: str, message: discord.Message) -> str:
     """Replace <@USER_ID> Discord mention tokens with human-readable @DisplayName."""
     if not message.guild or '<@' not in content:
@@ -451,40 +441,43 @@ async def shutdown(ctx):
     await bot.close()
     sys.exit(0)
 
+_JOKE_SETUPS = [
+    "okay don't judge me",
+    "wait i have one",
+    "ok bear with me",
+    "this is terrible and i love it",
+    "i hate that this made me laugh",
+    "you asked for this",
+    "ok this one's bad. in a good way.",
+    "u didn't hear this from me",
+    "i've been holding this one in",
+    "context: i've been awake too long",
+    "ok i'm sorry in advance",
+    "not me laughing at a dad joke again",
+    "don't @ me for this",
+]
+
+_JOKE_OUTROS_CMD = [
+    "i know i know",
+    "...okay i'm embarrassed",
+    "don't judge me",
+    "ok moving on",
+    "i regret nothing",
+    "💀",
+    "i'm hilarious",
+    "u laughed. don't lie.",
+    "ok anyway. that happened.",
+    "no thoughts just that joke",
+    "the delivery was what got me",
+]
+
+
 @bot.command()
 async def joke(ctx):
     punchline = await asyncio.to_thread(joke_service.random_joke)
     if not punchline:
         await ctx.send("idk any rn try again later lol")
         return
-    _JOKE_SETUPS = [
-        "okay don't judge me",
-        "wait i have one",
-        "ok bear with me",
-        "this is terrible and i love it",
-        "i hate that this made me laugh",
-        "you asked for this",
-        "ok this one's bad. in a good way.",
-        "u didn't hear this from me",
-        "i've been holding this one in",
-        "context: i've been awake too long",
-        "ok i'm sorry in advance",
-        "not me laughing at a dad joke again",
-        "don't @ me for this",
-    ]
-    _JOKE_OUTROS = [
-        "i know i know",
-        "...okay i'm embarrassed",
-        "don't judge me",
-        "ok moving on",
-        "i regret nothing",
-        "💀",
-        "i'm hilarious",
-        "u laughed. don't lie.",
-        "ok anyway. that happened.",
-        "no thoughts just that joke",
-        "the delivery was what got me",
-    ]
     await ctx.send(random.choice(_JOKE_SETUPS))
     await asyncio.sleep(random.uniform(1.0, 2.0))
     async with ctx.typing():
@@ -494,7 +487,7 @@ async def joke(ctx):
         await asyncio.sleep(random.uniform(1.5, 3.5))
         async with ctx.typing():
             await asyncio.sleep(random.uniform(0.4, 0.9))
-        await ctx.send(random.choice(_JOKE_OUTROS))
+        await ctx.send(random.choice(_JOKE_OUTROS_CMD))
 
 @tasks.loop(hours=1)
 async def _cleanup_cooldowns() -> None:
@@ -724,7 +717,7 @@ async def on_message(message):
                 _history[cid].append({
                     "role": "user",
                     "content": text_to_process,
-                    "name": _sanitize_name_for_api(author_name),
+                    "name": _api_safe_name(author_name),
                     "author": author_name,
                 })
                 _history[cid].append({"role": "assistant", "content": reply})
@@ -782,7 +775,7 @@ def main():
         print("❌ DISCORD_TOKEN is missing. Please set it in your .env file.")
         sys.exit(1)
     start_keepalive()
-    bot.run(str(DISCORD_TOKEN))
+    bot.run(DISCORD_TOKEN)
 
 if __name__ == "__main__":
     main()
