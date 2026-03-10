@@ -188,6 +188,43 @@ _RE_PAREN_ACTION = re.compile(
     re.IGNORECASE,
 )
 
+# AI empathy / support-bot openers — only patterns that are unambiguously chatbot dialect.
+# Deliberately minimal: only standalone openers unlikely to appear mid-sentence in valid text.
+_RE_AI_EMPATHY = re.compile(
+    r'^(?:'
+    r"aww?[,!]\s+"                                              # "aw," / "aww!" opener
+    r"|i'm (?:so )?sorry to hear(?: that| about it)\b[,!.]?\s*"  # "i'm sorry to hear that"
+    r'|i hear you\b[,!.]?\s*'                                   # standalone "i hear you"
+    r'|sending hugs?\b[,!.]?\s*'                                # "sending hug/hugs"
+    r')',
+    re.IGNORECASE,
+)
+
+# "That's [positive adjective]!" as a standalone reaction opener — assistant enthusiasm, not texting.
+_RE_THATS_OPENER = re.compile(
+    r"^that(?:'s| is)(?: so| really| absolutely)? "
+    r'(?:amazing|awesome|great|fantastic|wonderful|insightful)[!.]\s*',
+    re.IGNORECASE,
+)
+
+# Formal validation affirmers when used as sentence openers — professor dialect.
+_RE_VALIDATION_OPENER = re.compile(
+    r'^(?:exactly[,!.]\s+|precisely[,!.]\s+|indeed[,!.]\s+)',
+    re.IGNORECASE,
+)
+
+# Trailing engagement hooks — real texters don't close messages with these.
+_RE_ENGAGEMENT_CLOSER = re.compile(
+    r', (?:right\?|you know\?|don\'t you think\?)\s*$',
+    re.IGNORECASE,
+)
+
+# Multiple exclamation marks — AI over-enthusiasm signature.
+_RE_MULTI_EXCLAIM = re.compile(r'!{2,}')
+
+# Dangling leading punctuation left after a strip operation (comma, semicolon, dash).
+_RE_DANGLING_LEAD = re.compile(r'^[,;:\-\u2014]{1,3}\s*')
+
 
 def _api_safe_name(name: str) -> str:
     """Convert a display name to an API-safe identifier (a-z, A-Z, 0-9, _ only, max 64 chars).
@@ -590,6 +627,18 @@ def post_process(text: str) -> str:
     text = _RE_AI_OPENER.sub('', text).strip()
     # Strip AI assistant closer phrases
     text = _RE_AI_CLOSER.sub('', text).strip()
+    # Strip AI empathy / support-bot openers
+    text = _RE_AI_EMPATHY.sub('', text).strip()
+    # Strip "That's [adjective]!" reaction openers
+    text = _RE_THATS_OPENER.sub('', text).strip()
+    # Strip formal validation affirmers (exactly!, precisely!, indeed!)
+    text = _RE_VALIDATION_OPENER.sub('', text).strip()
+    # Third opener pass — new empathy/validation strips may expose a fresh opener
+    text = _RE_AI_OPENER.sub('', text).strip()
+    # Strip trailing engagement hooks (, right?  / , you know? / , don't you think?)
+    text = _RE_ENGAGEMENT_CLOSER.sub('', text).strip()
+    # Clean up dangling leading punctuation left by prior strip operations
+    text = _RE_DANGLING_LEAD.sub('', text).strip()
     # Lowercase all standalone capital I / I-contractions (I'm, I've, I'll, I'd)
     # — the single biggest mid-sentence AI tell
     text = _RE_CAPITAL_I.sub('i', text)
@@ -597,6 +646,8 @@ def post_process(text: str) -> str:
     text = _RE_TITLE_INTERJECTIONS.sub(lambda m: m.group(0).lower(), text)
     # Collapse multiple spaces left by any stripping operation
     text = _RE_DOUBLE_SPACE.sub(' ', text).strip()
+    # Collapse multiple exclamation marks — AI over-enthusiasm signature
+    text = _RE_MULTI_EXCLAIM.sub('!', text)
     # Remove trailing period unless it is part of "..."
     if text.endswith('.') and not text.endswith('...'):
         text = text[:-1].rstrip()

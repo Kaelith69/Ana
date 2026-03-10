@@ -271,18 +271,30 @@ def _maybe_typo(text: str) -> tuple[str, str | None]:
     """~4% chance to swap two adjacent chars in a word and return a star-correction.
 
     Returns (possibly_typo_text, "*correct_word" or None).
+    Contractions (don't, haven't, i'm, you're) are now eligible candidates —
+    only the alphabetic base before the apostrophe is typo'd so the correction
+    still reads naturally (e.g. "dno't" -> "*don't").
     """
     if random.random() >= 0.04:
         return text, None
     words = text.split()
-    candidates = [(i, w) for i, w in enumerate(words) if len(w) >= 4 and w.isalpha()]
+    # Accept plain alpha words AND contractions (don't, haven't, i'm, you're, etc.)
+    candidates = [
+        (i, w) for i, w in enumerate(words)
+        if len(w) >= 4 and re.match(r"^[a-zA-Z]+(?:'[a-zA-Z]+)?$", w)
+    ]
     if not candidates:
         return text, None
     idx, word = random.choice(candidates)
-    pos = random.randint(1, len(word) - 2)
-    typo_word = word[:pos] + word[pos + 1] + word[pos] + word[pos + 2:]
-    if typo_word == word:
+    # Only swap chars in the alphabetic base (pre-apostrophe) to avoid mangling contractions
+    base = word.split("'")[0]
+    if len(base) < 3:
         return text, None
+    pos = random.randint(1, len(base) - 2)
+    new_base = base[:pos] + base[pos + 1] + base[pos] + base[pos + 2:]
+    if new_base == base:
+        return text, None
+    typo_word = new_base + word[len(base):]
     words[idx] = typo_word
     return " ".join(words), f"*{word}"
 
