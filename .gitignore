@@ -34,6 +34,9 @@ secrets.yml
 # Project specific files
 dad_jokes.txt
 
+# Member profile data — contains personal info, never commit
+data/profiles/
+
 # OS/editor
 .DS_Store
 Thumbs.db

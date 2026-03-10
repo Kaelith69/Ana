@@ -6,10 +6,11 @@ import sys
 from collections import defaultdict, deque
 import discord
 from discord.ext import commands, tasks
-from config import DISCORD_TOKEN, JOKE_SETTINGS, TRIGGER_WORDS, ROAST_WORDS, FLIRT_WORDS
+from config import DISCORD_TOKEN, JOKE_SETTINGS, TRIGGER_WORDS, ROAST_WORDS, FLIRT_WORDS, GEN2_API_KEY
 from jokes import DadJokeService
 from keepalive import start_keepalive
 from nlp import process_with_nlp
+from profiles import profile_store, extract_profile_info
 
 TRIGGER_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, TRIGGER_WORDS)) + r')\b', re.IGNORECASE)
 ROAST_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, sorted(ROAST_WORDS))) + r')\b', re.IGNORECASE)
@@ -32,6 +33,10 @@ USER_COOLDOWN = 25  # seconds between replies to the same user
 # Per-channel last-reply timestamp (channel_id -> monotonic time)
 _channel_last_reply: dict[int, float] = {}
 CHANNEL_COOLDOWN = 7  # seconds between any replies in the same channel
+
+# Strong references to in-flight background profile-extraction tasks.
+# asyncio.create_task only keeps a weak ref — without this the task could be GC'd mid-run.
+_bg_tasks: set[asyncio.Task] = set()
 
 # Low-signal trigger words — Ana may silently ignore these sometimes
 _LOW_SIGNAL = frozenset({
@@ -231,6 +236,20 @@ def _split_reply(text: str) -> list[str]:
             return [p for p in [text[:cut].strip(), text[cut:].strip()] if p]
     return [text]
 
+async def _update_profile_bg(user_id: int, display_name: str, text: str) -> None:
+    """Background task: extract personal details from a message and update the profile store.
+
+    Runs via asyncio.create_task after Ana's reply is sent — never delays the response.
+    All failures are completely silent.
+    """
+    try:
+        extracted = await asyncio.to_thread(extract_profile_info, text, GEN2_API_KEY)
+        if extracted:
+            await asyncio.to_thread(profile_store.update, user_id, display_name, extracted)
+    except Exception:
+        pass
+
+
 @bot.command()
 @commands.is_owner()
 async def shutdown(ctx):
@@ -295,7 +314,7 @@ async def on_message(message):
         return
 
     # Process explicit commands (!joke, !shutdown) and exit immediately
-    if message.content.startswith(bot.command_prefix):
+    if message.content and message.content.startswith(bot.command_prefix):
         await bot.process_commands(message)
         return
 
@@ -355,8 +374,11 @@ async def on_message(message):
 
         author_name = message.author.display_name
 
+        # Load any profile data we already have for this user — passed to NLP for context
+        user_profile_context = await asyncio.to_thread(profile_store.format_for_context, uid)
+
         # Resolve <@USER_ID> tokens to readable names before sending to NLP
-        resolved_content = _resolve_mentions(message.content, message)
+        resolved_content = _resolve_mentions(message.content or "", message)
 
         # If this message is a Discord reply, inject the referenced message as context so
         # Ana knows who is being addressed / talked about — fixes group-chat confusion
@@ -392,7 +414,11 @@ async def on_message(message):
         await asyncio.sleep(read_delay)
 
         async with message.channel.typing():
-            reply = await asyncio.to_thread(process_with_nlp, text_to_process, history, author_name, is_roast, is_flirt)
+            reply = await asyncio.to_thread(
+                process_with_nlp,
+                text_to_process, history, author_name, is_roast, is_flirt,
+                user_profile_context,
+            )
             # Roasts: fast angry typing (0.4-1.2s). Others: proportional to reply length.
             if is_roast:
                 extra = random.uniform(0.4, 1.2)
@@ -417,6 +443,11 @@ async def on_message(message):
             _history[cid].append({"role": "assistant", "content": reply})
             _user_last_reply[uid] = now
             _channel_last_reply[cid] = now
+            # Background: extract personal details from this message and build/update user profile.
+            # Store the task reference in _bg_tasks so the event loop can't GC it mid-run.
+            _task = asyncio.create_task(_update_profile_bg(uid, author_name, resolved_content))
+            _bg_tasks.add(_task)
+            _task.add_done_callback(_bg_tasks.discard)
             parts = _split_reply(reply)
             # Typo+correction only on non-roast replies (she's not typo-ing when she's mad)
             first_part, correction = _maybe_typo(parts[0]) if not is_roast else (parts[0], None)

@@ -43,6 +43,9 @@ ROAST_PROMPT = (
     " 'ok. noted. moving on.'"
     " 'that was a choice.'"
     " '...sherikkum. okay.'"
+    "\nBREVITY RULE: 10 words maximum. one precise cut, then silence. if you need more than 10 words you are over-explaining."
+    " NEVER use 'X energy is a one-way ticket to Y' — AI idiom recycling, not a real comeback."
+    " NEVER use elaborate metaphors, journey/ticket/sport imagery. one specific observation > any cliché."
     "\noutput ONLY the comeback text. no framing, no quotation marks, nothing else."
 )
 
@@ -75,6 +78,8 @@ FLIRT_PROMPT = (
     " / 'u have approximately two more lines before i'm fully done for. use them wisely'"
     " / 'okay that was genuinely good. don't let it go to ur head'"
     " Try-hard: 'okay i see what u were going for. almost. try again with less effort next time.'"
+    "\nBREVITY RULE: under 12 words. one punchy line. a second beat is fine only if it CONTRASTS — never explains."
+    " NEVER use elaborate metaphors or 'X energy is Y' constructions — blunt and specific always beats poetic."
     "\nwrite in ana's style: lowercase, fragmented, no formal punctuation."
     " output ONLY the reply text, nothing else."
 )
@@ -260,9 +265,12 @@ FALLBACK_RESPONSES = [
 ]
 
 
-def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_name: Optional[str] = None, roast: bool = False, flirt: bool = False) -> Optional[str]:
+def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_name: Optional[str] = None, roast: bool = False, flirt: bool = False, user_profile: Optional[str] = None) -> Optional[str]:
     """Unified entry point: Groq waterfall (Kimi K2 → Llama 3.3 70B → Llama 4 Scout → Qwen 3 32B),
     then Gemini Gen1, then Gemini Gen2, then a hardcoded fallback.
+
+    user_profile: compact profile note from ProfileStore.format_for_context() — injected
+    into the system prompt so Ana can reference what she already knows about this user.
 
     Returns a reply string (may be empty)."""
     clean_text = (text or "").strip()
@@ -275,7 +283,7 @@ def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_nam
 
     # Try Groq waterfall — internally cycles through GROQ_MODEL_WATERFALL
     try:
-        reply = call_groq(clean_text, history, author_name, roast, flirt)
+        reply = call_groq(clean_text, history, author_name, roast, flirt, user_profile)
         if reply:
             return reply
     except Exception as e:
@@ -283,7 +291,7 @@ def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_nam
 
     # Fallback to GEN1 (backup)
     try:
-        reply = call_gemini(GEN1_MODEL, GEN1_API_KEY, clean_text, history=history, author_name=author_name, roast=roast, flirt=flirt, label="Gen1")
+        reply = call_gemini(GEN1_MODEL, GEN1_API_KEY, clean_text, history=history, author_name=author_name, roast=roast, flirt=flirt, label="Gen1", user_profile=user_profile)
         if reply:
             return reply
     except Exception as e:
@@ -291,7 +299,7 @@ def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_nam
 
     # Final fallback to GEN2 (backup2)
     try:
-        reply = call_gemini(GEN2_MODEL, GEN2_API_KEY, clean_text, history=history, author_name=author_name, roast=roast, flirt=flirt, label="Gen2")
+        reply = call_gemini(GEN2_MODEL, GEN2_API_KEY, clean_text, history=history, author_name=author_name, roast=roast, flirt=flirt, label="Gen2", user_profile=user_profile)
         if reply:
             return reply
     except Exception as e:
@@ -339,6 +347,7 @@ def _call_single_groq_model(
     author_name: Optional[str],
     roast: bool,
     flirt: bool,
+    user_profile: Optional[str] = None,
 ) -> Optional[str]:
     """Call one specific Groq model and return the reply, or None if empty.
 
@@ -372,6 +381,9 @@ def _call_single_groq_model(
             f" [btw the person messaging you is called {author_name}."
             " use their name naturally if it fits — don't force it, don't do it every message.]"
         )
+    # Inject stored profile note — only for normal/flirt, not roast (roast is about the burn, not history)
+    if user_profile and not roast:
+        base_prompt += f"\n\n{user_profile}"
     if not roast and not flirt:
         base_prompt += (
             "\n\n[group chat: multiple users are active in this server."
@@ -431,6 +443,7 @@ def call_groq(
     author_name: Optional[str] = None,
     roast: bool = False,
     flirt: bool = False,
+    user_profile: Optional[str] = None,
 ) -> Optional[str]:
     """Try each model in GROQ_MODEL_WATERFALL in priority order.
 
@@ -442,7 +455,7 @@ def call_groq(
     for model_id in GROQ_MODEL_WATERFALL:
         try:
             reply = _call_single_groq_model(
-                model_id, input_text, history, author_name, roast, flirt
+                model_id, input_text, history, author_name, roast, flirt, user_profile
             )
             if reply:
                 return reply
@@ -453,7 +466,7 @@ def call_groq(
     return None
 
 
-def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Optional[List[dict]] = None, author_name: Optional[str] = None, roast: bool = False, flirt: bool = False, label: str = "Gemini") -> Optional[str]:
+def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Optional[List[dict]] = None, author_name: Optional[str] = None, roast: bool = False, flirt: bool = False, label: str = "Gemini", user_profile: Optional[str] = None) -> Optional[str]:
     """Call a Gemini model via the Google Generative Language API.
 
     Used for both Gen1 and Gen2 fallbacks.
@@ -475,7 +488,10 @@ def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Op
             " reply to the current user, but you have memory of who said what before.]"
         )
     if author_name:
-        prompt += f" [btw the person messaging you is called {author_name}. use their name naturally if it fits \u2014 don't force it, don't do it every message.]"
+        prompt += f" [btw the person messaging you is called {author_name}. use their name naturally if it fits — don't force it, don't do it every message.]"
+    # Inject stored profile note — only for normal/flirt, not roast
+    if user_profile and not roast:
+        prompt += f"\n\n{user_profile}"
     contents = []
     if history:
         for msg in history:
@@ -494,7 +510,7 @@ def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Op
         "contents": contents,
         "generationConfig": {
             "temperature": 1.4 if roast else (1.15 if flirt else 0.95),
-            "maxOutputTokens": 200,
+            "maxOutputTokens": 100,
         },
         "systemInstruction": {
             "parts": [{"text": prompt}]
@@ -587,7 +603,25 @@ def post_process(text: str) -> str:
                 line = line[:i] + ch.lower() + line[i + 1:]
                 break
         result_lines.append(line)
-    return '\n'.join(result_lines)
+    text = '\n'.join(result_lines)
+    # Limit em-dashes to one per reply — multiple em-dashes in a short reply is an AI rambling pattern.
+    # Replace 2nd+ occurrences with ". " to keep the flow without the AI tell.
+    emdash_parts = text.split('\u2014')
+    if len(emdash_parts) > 2:
+        # Keep first em-dash + its right side (rstripped so the period sits flush);
+        # join remaining parts with ". " as replacement dashes.
+        first = emdash_parts[0] + '\u2014' + emdash_parts[1].rstrip()
+        rest = '. '.join(p.lstrip() for p in emdash_parts[2:])
+        text = (first + '. ' + rest) if rest else first
+    # Safety net: cap single-line replies at the first sentence boundary after 25 chars.
+    # Token limits reduce verbosity but a model can still pack 2 sentences into 80 tokens.
+    if '\n' not in text and len(text) > 90:
+        for sep in ('. ', '! ', '? '):
+            idx = text.find(sep, 25)
+            if 25 < idx < len(text) - 5:
+                text = text[:idx].rstrip()
+                break
+    return text
 
 
 def normalize_response(raw: Optional[str]) -> Optional[str]:
