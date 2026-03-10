@@ -192,7 +192,7 @@ _RE_PAREN_ACTION = re.compile(
 # Deliberately minimal: only standalone openers unlikely to appear mid-sentence in valid text.
 _RE_AI_EMPATHY = re.compile(
     r'^(?:'
-    r"aww?[,!]\s+"                                              # "aw," / "aww!" opener
+    r"aww?[,! ]\s*"                                             # "aw," / "aww!" / "aw " opener
     r"|i'm (?:so )?sorry to hear(?: that| about it)\b[,!.]?\s*"  # "i'm sorry to hear that"
     r'|i hear you\b[,!.]?\s*'                                   # standalone "i hear you"
     r'|sending hugs?\b[,!.]?\s*'                                # "sending hug/hugs"
@@ -298,6 +298,27 @@ FALLBACK_RESPONSES = [
     "..okay",
     "this timeline is wild",
     "carry on i guess",
+    "sherikkum okay",
+    "...yeah no",
+    "ok that's one way to put it",
+    "wait. what.",
+    "i'm just sitting here",
+    "okay noted. moving on.",
+    "...right",
+    "enthina",
+    "hauda. ok.",
+    "not me processing this in real time",
+    "i just. yeah.",
+    "ok well that happened",
+    "......",
+    "big claims",
+    "okay ur brave for that",
+    "i'll need a minute",
+    "circumstances",
+    "yeah okay sure",
+    "the way i have no response",
+    "ok that's fair i guess",
+    "... no i get it",
 ]
 
 

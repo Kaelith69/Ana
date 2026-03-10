@@ -126,6 +126,12 @@ _ROAST_FOLLOWUPS = [
     "...ok next",
     "that was mercy",
     "aiyyo. go home.",
+    "it wasn't even a hard one bro",
+    "moving on with my life",
+    "okay. noted. logging off from this interaction.",
+    "i've already forgotten about it tbh",
+    "the silence after is also part of it",
+    "done here",
 ]
 
 # Follow-up lines Ana might send a few seconds after her reply
@@ -257,6 +263,16 @@ _GOODNIGHT_LINES = [
     "ok i'm done for the night. gn.",
     "gn. try not to implode without me.",
     "alright i'm out. gn everyone.",
+    "okay i'm disappearing now. gn.",
+    "tired. gn.",
+    "gn. don't be weird while i'm asleep.",
+    "ok logging off. this was a choice.",
+    "aiyyo getting offline. gn.",
+    "sleepy. bye.",
+    "can't keep my eyes open. gn everyone.",
+    "okay going now. gn.",
+    "i'm out. gn. behave.",
+    "gn. i'd say see u tomorrow but that's technically today now.",
 ]
 
 _GOODMORNING_LINES = [
@@ -270,6 +286,15 @@ _GOODMORNING_LINES = [
     "back. don't make me regret it.",
     "gm. coffee first, everything else later.",
     "morning. i'll be human in approximately one cup.",
+    "okay woke up. barely counts but here we are.",
+    "aiyyo it's early. gm.",
+    "gm. don't expect too much from me yet.",
+    "technically awake.",
+    "alive. questionably. gm.",
+    "gm. the sun has no right to be that bright.",
+    "back. not happy about it but back.",
+    "ok good morning or whatever. still waking up.",
+    "aiyyo. peak hours resuming.",
 ]
 
 
@@ -396,12 +421,35 @@ async def joke(ctx):
         "you asked for this",
         "ok this one's bad. in a good way.",
         "u didn't hear this from me",
+        "i've been holding this one in",
+        "context: i've been awake too long",
+        "ok i'm sorry in advance",
+        "not me laughing at a dad joke again",
+        "don't @ me for this",
+    ]
+    _JOKE_OUTROS = [
+        "i know i know",
+        "...okay i'm embarrassed",
+        "don't judge me",
+        "ok moving on",
+        "i regret nothing",
+        "💀",
+        "i'm hilarious",
+        "u laughed. don't lie.",
+        "ok anyway. that happened.",
+        "no thoughts just that joke",
+        "the delivery was what got me",
     ]
     await ctx.send(random.choice(_JOKE_SETUPS))
     await asyncio.sleep(random.uniform(1.0, 2.0))
     async with ctx.typing():
         await asyncio.sleep(random.uniform(1.2, 2.2))
     await ctx.send(punchline)
+    if random.random() < 0.55:
+        await asyncio.sleep(random.uniform(1.5, 3.5))
+        async with ctx.typing():
+            await asyncio.sleep(random.uniform(0.4, 0.9))
+        await ctx.send(random.choice(_JOKE_OUTROS))
 
 @tasks.loop(hours=1)
 async def _cleanup_cooldowns() -> None:
