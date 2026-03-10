@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import datetime
 import random
 import re
 import sys
@@ -172,6 +173,66 @@ _FOLLOWUPS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Sleep / wake routine
+# ---------------------------------------------------------------------------
+
+_IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
+# Channel IDs where Ana has sent at least one message — used to pick the
+# announcement channel for sleep/wake broadcasts.
+_active_channels: set[int] = set()
+
+
+def _is_sleeping() -> bool:
+    """Return True during Ana's sleep window: 00:00–05:29 IST."""
+    now = datetime.datetime.now(_IST)
+    return now.hour < 5 or (now.hour == 5 and now.minute < 30)
+
+
+def _best_channel():
+    """Return the most recently active TextChannel Ana has spoken in, or None."""
+    if not _channel_last_reply:
+        return None
+    cid = max(_channel_last_reply, key=lambda k: _channel_last_reply[k])
+    return bot.get_channel(cid)
+
+
+_SLEEP_AFK_RESPONSES = [
+    "ana afk — sleeping. try again after 5:30am.",
+    "she's asleep. go sleep bitch.",
+    "zzz. afk till 5:30am.",
+    "asleep. not available rn.",
+    "ana: sleeping. not taking questions.",
+]
+
+_GOODNIGHT_LINES = [
+    "okay i'm going. gn everyone.",
+    "aiyyo it's midnight. gn.",
+    "ok gn. don't do anything stupid while i'm gone.",
+    "sleep is pulling me. gn 💀",
+    "ok i'm logging off. gn.",
+    "goodnight. don't miss me too much.",
+    "it's that time. gn.",
+    "ok i'm done for the night. gn.",
+    "gn. try not to implode without me.",
+    "alright i'm out. gn everyone.",
+]
+
+_GOODMORNING_LINES = [
+    "ok i'm back. barely.",
+    "it is 5:30am and i've made a terrible decision to be awake.",
+    "gm i guess.",
+    "ok i'm here. gm.",
+    "aiyyo morning.",
+    "gm. don't talk to me for 20 minutes.",
+    "ok i'm awake. somehow.",
+    "back. don't make me regret it.",
+    "gm. coffee first, everything else later.",
+    "morning. i'll be human in approximately one cup.",
+]
+
+
 def _sanitize_name_for_api(name: str) -> str:
     """Return an API-safe participant name: a-z, A-Z, 0-9, underscores only, max 64 chars.
 
@@ -302,11 +363,37 @@ async def _cleanup_cooldowns() -> None:
         del _channel_last_reply[cid]
 
 
+@tasks.loop(time=datetime.time(hour=0, minute=0, second=0, tzinfo=_IST))
+async def _ana_sleep() -> None:
+    """Send a goodnight message at midnight IST."""
+    ch = _best_channel()
+    if ch is None:
+        return
+    async with ch.typing():
+        await asyncio.sleep(random.uniform(0.8, 1.8))
+    await ch.send(random.choice(_GOODNIGHT_LINES))
+
+
+@tasks.loop(time=datetime.time(hour=5, minute=30, second=0, tzinfo=_IST))
+async def _ana_wake() -> None:
+    """Send a goodmorning message at 05:30 IST."""
+    ch = _best_channel()
+    if ch is None:
+        return
+    async with ch.typing():
+        await asyncio.sleep(random.uniform(1.0, 2.0))
+    await ch.send(random.choice(_GOODMORNING_LINES))
+
+
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
     if not _cleanup_cooldowns.is_running():
         _cleanup_cooldowns.start()
+    if not _ana_sleep.is_running():
+        _ana_sleep.start()
+    if not _ana_wake.is_running():
+        _ana_wake.start()
 
 @bot.event
 async def on_message(message):
@@ -327,6 +414,13 @@ async def on_message(message):
                   or bool(FLIRT_PATTERN.search(content)))
     
     if is_trigger:
+        # Sleep guard — Ana is unavailable during her sleep window (00:00–05:29 IST).
+        # No LLM calls are made; a static AFK message is sent instead.
+        if _is_sleeping():
+            await asyncio.sleep(random.uniform(0.4, 1.2))
+            await message.channel.send(random.choice(_SLEEP_AFK_RESPONSES))
+            return
+
         now = asyncio.get_running_loop().time()
         uid = message.author.id
         cid = message.channel.id
@@ -445,6 +539,7 @@ async def on_message(message):
             _history[cid].append({"role": "assistant", "content": reply})
             _user_last_reply[uid] = now
             _channel_last_reply[cid] = now
+            _active_channels.add(cid)  # track for sleep/wake announcements
             # Background: extract personal details from this message and build/update user profile.
             # Store the task reference in _bg_tasks so the event loop can't GC it mid-run.
             _task = asyncio.create_task(_update_profile_bg(uid, author_name, resolved_content))
