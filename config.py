@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
@@ -15,7 +16,7 @@ def _int_env(var_name: str, default: int) -> int:
     try:
         return int(raw)
     except ValueError:
-        print(f"⚠️ Warning: Invalid {var_name} value '{raw}'. Using default {default}.")
+        print(f"⚠️ Warning: Invalid {var_name} value '{raw}'. Using default {default}.", file=sys.stderr)
         return default
 
 
@@ -26,7 +27,7 @@ def _float_env(var_name: str, default: float) -> float:
     try:
         return float(raw)
     except ValueError:
-        print(f"⚠️ Warning: Invalid {var_name} value '{raw}'. Using default {default}.")
+        print(f"⚠️ Warning: Invalid {var_name} value '{raw}'. Using default {default}.", file=sys.stderr)
         return default
 
 
@@ -248,6 +249,7 @@ class JokeSettings:
     cooldown: int
     fetch_timeout: int
     api_url: str
+    max_jokes_per_day: int
 
 
 JOKE_SETTINGS = JokeSettings(
@@ -255,6 +257,7 @@ JOKE_SETTINGS = JokeSettings(
     cooldown=_int_env("JOKE_COOLDOWN", 60),
     fetch_timeout=_int_env("JOKE_FETCH_TIMEOUT", 8),
     api_url=os.getenv("JOKE_API_URL", "https://icanhazdadjoke.com/"),
+    max_jokes_per_day=_int_env("JOKE_MAX_PER_DAY", 3),
 )
 
 TRIGGER_WORDS = (
@@ -397,13 +400,13 @@ MODEL_SETTINGS = {
 
 
 if not DISCORD_TOKEN:
-    print("⚠️ Warning: Missing DISCORD_TOKEN in .env. Bot will not start.")
+    print("⚠️ Warning: Missing DISCORD_TOKEN in .env. Bot will not start.", file=sys.stderr)
 
 if not GEN1_API_KEY:
-    print("⚠️ Warning: Missing GEN1_API_KEY. Gemini Gen1 fallback will not work.")
+    print("⚠️ Warning: Missing GEN1_API_KEY. Gemini Gen1 fallback will not work.", file=sys.stderr)
 
 if not GEN2_API_KEY:
-    print("⚠️ Warning: Missing GEN2_API_KEY. Gemini Gen2 fallback will not work.")
+    print("⚠️ Warning: Missing GEN2_API_KEY. Gemini Gen2 fallback will not work.", file=sys.stderr)
 
 if not GROQ_API_KEY:
-    print("⚠️ Warning: Missing GROQ_API_KEY. Groq-based responses may fail.")
+    print("⚠️ Warning: Missing GROQ_API_KEY. Groq-based responses may fail.", file=sys.stderr)

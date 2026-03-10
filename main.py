@@ -196,7 +196,7 @@ _FOLLOWUPS = [
     "nvm nvm nvm",
     "ok but also",
     "wait no",
-    "..wait",
+    "...wait",
     "no u know what",
     "ugh forget it",
     "ok anyway",
@@ -639,7 +639,10 @@ async def on_message(message):
             except (discord.HTTPException, OSError):
                 pass
 
-        author_name = message.author.display_name
+        # Sanitise display name: strip control chars and context-format chars ([ ] " \)
+        # that call_gemini injects as "[name]: text" — prevents prompt injection via display names.
+        # Same character set as ref_author sanitisation a few lines below.
+        author_name = re.sub(r'[\r\n\t\[\]"\\]', ' ', message.author.display_name).strip()[:50] or "user"
 
         # Load any profile data we already have for this user — passed to NLP for context
         user_profile_context = await asyncio.to_thread(profile_store.format_for_context, uid)

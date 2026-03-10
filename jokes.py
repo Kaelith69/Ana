@@ -15,7 +15,6 @@ class DadJokeService:
         self.last_joke_time = 0.0
         self.daily_joke_count = 0
         self.last_joke_day = self._current_day()
-        self.max_jokes_per_day = 3
 
     def _current_day(self) -> int:
         # Returns the current day as an integer (days since epoch)
@@ -41,7 +40,7 @@ class DadJokeService:
             self.daily_joke_count = 0
             self.last_joke_day = today
         # Enforce daily joke limit
-        if self.daily_joke_count >= self.max_jokes_per_day:
+        if self.daily_joke_count >= self.settings.max_jokes_per_day:
             return
         # Pseudo-random: only send if random chance and cooldown
         if now - self.last_joke_time < self.settings.cooldown:
