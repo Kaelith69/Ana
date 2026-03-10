@@ -8,6 +8,33 @@ Translation: `MAJOR.MINOR.PATCH` — breaking.feature.bugfix. Simple.
 
 ---
 
+## [8.0.0] - 2026-03-10
+
+### Added
+- **Member profile memory** — new `profiles.py` module. After every reply, a background `asyncio.create_task` calls Gemini to silently extract personal details the user explicitly revealed (nickname, age, location, favorites, interests, family, facts). Stored as individual JSON files in `data/profiles/{name}.json`. Injected into the system prompt so Ana remembers things about each person across sessions.
+- **`ProfileStore` class** — thread-safe, atomic-write profile store. `get()` / `update()` / `format_for_context()` / `list_pending()` / `cancel()`. Lazy directory scan on first access; ID-based lookup with collision-safe filename generation.
+- **`extract_profile_info()`** — calls `gemini-flash-latest` to extract JSON-structured personal details from a message. Handles markdown-fenced responses, strips empty fields, coerces `age` to `int`, normalises `interests`/`facts` to lists.
+- **`_sanitize_for_prompt()`** — strips `\r\n\t[]\\` from all dynamic profile values before injection into the system prompt, preventing prompt injection via stored profile data.
+- **Smart reminder system** — new `reminders.py` module backed by `data/reminders/reminders.json`.
+  - `!remindme <natural language>` — Gemini parses free-form text into a structured reminder (`datetime_ist`, `occasion`, `occasion_type`, `notes`). Relative dates resolved against current IST. Warns immediately if the parsed date is already in the past.
+  - `!myreminders` — lists all pending reminders with short IDs and formatted IST datetimes.
+  - `!cancelreminder <id>` — cancels a pending reminder by its 8-char ID prefix.
+  - `_check_reminders` background task fires every 60 seconds, calls Gemini to generate an Ana-style AI wish/reminder message (tone varies by `occasion_type`: birthday / anniversary / wedding / exam / meeting / custom), and sends an @mention to the correct channel.
+- **Profile extraction logging** — `_update_profile_bg()` now prints to `stderr` on every outcome: key missing, no info found, successful update, or exception. Replaces previously silent `except: pass`.
+- **Gemini extraction HTTP error logging** — `extract_profile_info()` now prints the HTTP status + first 200 chars of the error body when Gemini returns non-200.
+
+### Fixed
+- **IST timezone bug in `_build_context_layer()`** — previously used `datetime.now(utc) + timedelta(hours=5, minutes=30)` which shifts the internal timestamp but leaves `.hour` and `.weekday()` reading from the UTC offset, giving wrong time-of-day and day-of-week values. Replaced with `datetime.now(_IST)` (proper `timezone` object) — same pattern already used in `main.py`.
+- **Wrong Gemini model names** — `GEN2_MODEL` in `nlp.py` and `_EXTRACTION_MODEL` in `profiles.py` were set to `gemini-2.5-flash-lite` which does not exist on the v1beta API (returns HTTP 404 silently). Both corrected to `gemini-flash-latest`.
+
+### Security
+- **Prompt injection via profile data (S1)** — all dynamic profile values (nickname, location, favorites, facts, etc.) now passed through `_sanitize_for_prompt()` before being injected into the system prompt. Strips newlines, tabs, square brackets, and backslashes — the primary vectors for injecting fake `[System: ...]` directives.
+- **Unbounded string growth (S2)** — string scalars in `_deep_merge()` are now capped at 120 chars. Prevents a long sequence of messages with crafted text from inflating every subsequent system prompt.
+- **HTTP security headers (S3)** — `keepalive.py` Flask endpoint now sends `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Cache-Control: no-store` on every response via an `@app.after_request` hook.
+- **Log data exposure (S4)** — LLM raw output printed to stdout in `nlp.py` is now truncated to 200 chars, preventing full user message content (injected via profile context) from appearing in logs.
+
+---
+
 ## [5.0.0] - 2026
 
 ### Added

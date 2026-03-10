@@ -4,6 +4,28 @@ What's been built, what's coming, and what's probably not happening.
 
 ---
 
+## Shipped (v8.0.0)
+
+### Smart Reminder System
+Full reminder pipeline with `!remindme <natural language>`, `!myreminders`, and `!cancelreminder <id>` commands. Gemini parses free-form text into a structured reminder (resolves relative dates, infers occasion type). A `tasks.loop(minutes=1)` background task fires due reminders with an AI-generated, Ana-voice wish @mentioning the user. Persisted in `data/reminders/reminders.json`.
+
+### Per-User Profile Memory
+Ana silently extracts personal details from every message she replies to (name, age, location, favourites, interests, etc.) via a background `asyncio.create_task`. Profiles are deep-merged into per-user JSON files in `data/profiles/`. On every reply, the profile is injected as a compact one-line context string, letting Ana remember things across sessions.
+
+### IST Timezone Fix
+`_build_context_layer()` in `nlp.py` was computing IST by adding a `timedelta` to a UTC `datetime` — giving correct clock arithmetic but wrong `.hour` and `.weekday()` values. Fixed by defining `_IST = datetime.timezone(timedelta(hours=5, minutes=30))` and using `datetime.now(_IST)`.
+
+### Gemini Model Name Fixes
+`_EXTRACTION_MODEL` in `profiles.py` and `GEN2_MODEL` in `nlp.py` were set to the non-existent `gemini-2.5-flash-lite`. Corrected to `gemini-flash-latest`.
+
+### Security Hardening
+Flask keepalive now sends `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `Cache-Control: no-store` headers. Profile values sanitised via `_sanitize_for_prompt()` before prompt injection. `_deep_merge()` caps string scalars at 120 chars.
+
+### Extraction Error Logging
+`_update_profile_bg()` and `extract_profile_info()` now log all outcomes to stderr instead of silently swallowing exceptions.
+
+---
+
 ## Shipped (v5.0.0)
 
 ### Multi-User Group Chat Awareness
@@ -102,7 +124,7 @@ Pre-fetch a small joke cache in the background so `!joke` delivery is instant. `
 ## Probably Not
 
 ### Database Integration
-Ana is intentionally stateless beyond in-memory conversation history. Adding a persistent database would increase complexity and privacy surface area without much benefit for the core use case.
+Ana now uses lightweight JSON file persistence for profiles (`data/profiles/`) and reminders (`data/reminders/`). A full SQL or NoSQL database remains out of scope — the JSON approach covers current needs without the operational overhead.
 
 ### Voice Channel Support
 TTS + voice connection management is out of scope. Cool in theory. Not happening.

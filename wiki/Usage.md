@@ -24,6 +24,52 @@ Ana: idk any rn try again later lol
 
 ---
 
+### `!remindme <text>`
+
+Set a reminder using natural language. Gemini parses the text into a structured reminder using the current IST time as reference.
+
+```
+You:  !remindme march 20 10am mum's birthday
+Ana:  done ✅ i'll remind you on Mar 20 at 10:00 AM IST — mum's birthday
+      (to cancel: !cancelreminder abc12345)
+```
+
+Examples of text Gemini can parse:
+- `!remindme tomorrow 9am team meeting`
+- `!remindme 25th dec christmas`
+- `!remindme next friday 6pm dinner with friends`
+- `!remindme 10 mins before my exam at 3pm` *(approximate)*
+
+At the specified time, Ana will @mention you in the same channel with an AI-generated message in her voice — a birthday wish, exam pep-talk, or casual heads-up depending on the occasion type.
+
+---
+
+### `!myreminders`
+
+Lists all your pending (not yet fired) reminders with their short IDs and scheduled IST times.
+
+```
+You:  !myreminders
+Ana:  your pending reminders:
+      • abc12345 — Mar 20 10:00 AM — mum's birthday
+      • ff994421 — Dec 25 12:00 AM — christmas
+```
+
+---
+
+### `!cancelreminder <id>`
+
+Cancels a pending reminder by its short ID (the 8-character prefix shown in `!my reminders`).
+
+```
+You:  !cancelreminder abc12345
+Ana:  reminder cancelled.
+```
+
+You can only cancel your own reminders.
+
+---
+
 ### `!shutdown`
 
 **Bot owner only.** Ana says a quick casual goodbye and shuts down cleanly.
@@ -40,6 +86,26 @@ Ana: ...
 If you're not the bot owner, the command is silently ignored.
 
 **Who is the bot owner?** The account that created the application in the Discord Developer Portal. `discord.py`'s `@commands.is_owner()` resolves this automatically — no config needed.
+
+---
+
+## Profile Memory
+
+Ana silently learns about members over time. After every reply, she sends the triggering message to Gemini in a background task (never on the reply path — it doesn't slow anything down) to extract personal details the person explicitly shared.
+
+**What gets stored:** nickname, age, location, favourite games/shows/music/food, interests, family mentions, and miscellaneous facts.
+
+**What doesn't get stored:** anything inferred, assumed, or not directly stated. If you didn't say it, it won't be recorded.
+
+**Where it lives:** `data/profiles/{name}.json` — one file per user, on the host's local disk. Profile files persist across restarts.
+
+**How it's used:** When Ana replies to someone with a stored profile, she gets a compact one-line summary injected into the system prompt:
+```
+[what you know about Kælith: age 22 · from Bengaluru · faves — game: Minecraft · music: indie pop · interests: anime, coding]
+```
+This lets her reference things you've mentioned before — naturally, without announcing it.
+
+**To clear your profile:** Delete `data/profiles/{your-display-name}.json` from the host's filesystem. The file path is displayed in the stderr log when extraction runs.
 
 ---
 
@@ -196,7 +262,7 @@ When a trigger is detected, Ana runs:
    - Llama 4 Scout (`meta-llama/llama-4-scout-17b-16e-instruct`) — temp 0.88
    - Qwen 3 32B (`qwen/qwen3-32b`) — temp 0.82; all max 200 tokens
 5. **Gemini Gen1 fallback** — `gemini-1.5-flash-latest`, temperature 1.2 / 1.4 (roast), max 200 tokens
-6. **Gemini Gen2 fallback** — `gemini-2.5-flash-lite`, same settings
+6. **Gemini Gen2 fallback** — `gemini-flash-latest`, same settings
 7. **Static fallback** — random choice from a pool of human-sounding short phrases
 8. **`post_process()`** — strips markdown, AI openers, context-injection echoes, name-prefix echoes, stage-direction parens `(laughs)`, trailing periods, capitalised first letter
 

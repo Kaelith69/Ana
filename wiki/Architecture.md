@@ -15,6 +15,7 @@ Discord Server
    │     ├── detect is_roast / is_flirt / is_trigger
    │     ├── _resolve_mentions()   ← replace <@ID> with @DisplayName
    │     ├── inject reply-thread context (if Discord reply)
+   │     ├── asyncio.create_task(_update_profile_bg())  ← silent background extraction
    │     │
    │     ├── ROAST ──► bypass cooldowns → reading delay 0.2–0.7s
    │     │                             → asyncio.to_thread(process_with_nlp, roast=True)
@@ -27,6 +28,7 @@ Discord Server
    │     │                          └── 20% _FLIRT_FOLLOWUPS
    │     │
    │     ├── TRIGGER ► cooldowns → 12% emoji-only reaction
+   │     │                       → profile_store.format_for_context(uid) ← inject memory
    │     │                       → reading delay 0.5–3s (proportional to msg length)
    │     │                       → asyncio.to_thread(process_with_nlp)
    │     │                            └── nlp.py → post_process() → proportional delay
@@ -34,8 +36,20 @@ Discord Server
    │     │
    │     └── NO TRIGGER → maybe_send_joke() → jokes.py
    │
+   ├── !remindme ──────┐
+   ├── !myreminders    ├─→ reminders.py → parse_reminder() / ReminderStore
+   ├── !cancelreminder ┘
    ├── !joke ─→ joke_service.random_joke()
    └── !shutdown ─→ casual farewell → bot.close()
+
+_check_reminders (tasks.loop, every 1 min)
+   └── reminder_store.get_due(now_ist)
+         └── generate_wish()  ← gemini-flash-latest, tone varies by occasion_type
+               └── channel.send(f"{mention} {msg}")
+
+_update_profile_bg (asyncio.create_task per message)
+   └── profiles.extract_profile_info()  ← gemini-flash-latest, structured JSON
+         └── profile_store.update()  ← deep-merge → data/profiles/{name}.json
 
 config.py  ◄────── .env (tokens, API keys, SYSTEM_PROMPT override)
 keepalive.py ─→ Flask on :8080 (GET / → "Bot is alive!")
@@ -44,6 +58,25 @@ keepalive.py ─→ Flask on :8080 (GET / → "Bot is alive!")
 ---
 
 ## Module Breakdown
+
+### `profiles.py` — Per-User Memory
+
+Runs entirely in the background — never on the critical reply path.
+
+- **`extract_profile_info(text, api_key)`** — calls `gemini-flash-latest` with a low-temperature structured-extraction prompt. Returns a dict of personal details explicitly stated by the user (nickname, age, location, favorites, interests, family, facts). Handles age coercion (`"23"` → `23`), normalises bare strings to lists for `interests`/`facts`, and strips markdown fences from the model response.
+- **`_sanitize_for_prompt(s)`** — strips `\r\n\t[]\\` and caps at 120 chars. Applied to every dynamic profile value before injection into the system prompt (prompt injection defence).
+- **`ProfileStore`** — thread-safe, atomic-write store. One JSON file per user in `data/profiles/`. Lazy directory scan on first access. ID-based lookup with collision-safe filename generation (suffix fallback). `format_for_context(user_id)` returns a compact one-line string for the system prompt: `[what you know about Name: age 22 · from Bengaluru · faves — game: Minecraft]`.
+- **`_deep_merge(existing, incoming)`** — dicts merge recursively, lists union without duplicates, scalars overwrite (newer wins), strings capped at 120 chars.
+
+---
+
+### `reminders.py` — Smart Reminder System
+
+- **`parse_reminder(raw_text, ...)`** — sends user's free-form text + current IST datetime to Gemini. Instructs the model to resolve relative dates (today/tomorrow/next week), infer `occasion_type` (birthday/anniversary/wedding/exam/meeting/custom), and return a strict JSON object with `datetime_ist`, `occasion`, `occasion_type`, `notes`. Validates the parse and returns a complete reminder record with a UUID4 `id`.
+- **`generate_wish(reminder, api_key)`** — two-step reasoning prompt baked into a single Gemini call: model is asked to silently assess the right tone first, then produce a short Ana-voice message. Temperature 1.1 for personality. Tone varies by `occasion_type`.
+- **`ReminderStore`** — thread-safe, atomic-write store backed by `data/reminders/reminders.json`. `get_due(now_ist)` returns all pending reminders past their `datetime_ist`. `mark_done(id)` sets `done: true`. `list_pending(user_id)` / `cancel(user_id, id_prefix)` support the list and cancel commands.
+
+---
 
 ### `main.py` — The Discord Layer
 
@@ -87,7 +120,7 @@ process_with_nlp(text, history, author_name, roast, flirt)
     │           history user entries prefixed [Name]: content
     │
     ├── (Gen1 fails) call_gemini(GEN2_MODEL, GEN2_API_KEY)
-    │     └── gemini-2.5-flash-lite  (same settings as Gen1)
+          └── gemini-flash-latest  (same settings as Gen1)
     │
     └── (all fail) random.choice(FALLBACK_RESPONSES)
           └── human-sounding short phrases
@@ -174,12 +207,15 @@ After running once, Ana starts automatically on every reboot, waits for network 
 
 ## Threading Model
 
-Ana runs two threads:
+Ana runs two threads plus background asyncio tasks:
 
 1. **Main thread** — Discord's `bot.run()` which runs the asyncio event loop
 2. **Keepalive thread** — Flask's development server (daemon=True, dies when main thread dies)
 
-AI calls within the event loop are dispatched via `asyncio.to_thread()` to the default thread pool executor, so they don't block Discord event processing.
+Within the asyncio event loop:
+- **`asyncio.to_thread`** — offloads blocking AI API calls to the default thread pool executor so they don't stall Discord I/O
+- **`asyncio.create_task(_update_profile_bg)`** — spawned per message; extracts profile info in the background after every reply
+- **`tasks.loop(minutes=1)` (`_check_reminders`)** — discord.py background task that polls `data/reminders/reminders.json` and fires due reminders
 
 ---
 
@@ -189,6 +225,6 @@ AI calls within the event loop are dispatched via `asyncio.to_thread()` to the d
 |---|---|---|
 | Discord API | Bot gateway, message events, replies | Yes |
 | Groq API | 4-model waterfall (Kimi K2 primary) | Recommended |
-| Google Gemini Gen1 | First AI fallback after Groq waterfall | Optional |
-| Google Gemini Gen2 | Second AI fallback | Optional |
+| Google Gemini Gen1 (GEN1_API_KEY) | First AI fallback after Groq waterfall | Optional |
+| Google Gemini Gen2 (GEN2_API_KEY) | Second AI fallback; profile extraction; reminder parsing + wish generation | Optional |
 | icanhazdadjoke.com | Live dad joke fetching | Optional (no jokes if down) |

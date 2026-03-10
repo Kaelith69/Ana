@@ -116,7 +116,7 @@ Common Groq errors:
 | Error | Cause | Fix |
 |---|---|---|
 | `403 Forbidden` | Invalid or missing key | Re-copy from aistudio.google.com |
-| `400 Bad Request` | Malformed request | Check `GEN1_MODEL` / `GEN2_MODEL` values in `nlp.py` match current Gemini model names |
+| `400 Bad Request` | Malformed request | Check `GEN1_MODEL` / `GEN2_MODEL` values in `nlp.py` match current Gemini model names (`gemini-1.5-flash-latest` / `gemini-flash-latest`) |
 | `429 Too Many Requests` | Quota exceeded | Free tier has daily limits; wait or upgrade |
 
 ---
@@ -193,6 +193,62 @@ JOKE_COOLDOWN=600
 Restart after changing `.env`.
 
 Note: the daily maximum is hardcoded at 3 in `jokes.py`. If you want to change it, edit `self.max_jokes_per_day = 3` in the `DadJokeService.__init__` method.
+
+---
+
+## Profile not updating
+
+Ana extracts profile info in the background after every reply using `GEN2_API_KEY`. If profiles aren't being populated or updated:
+
+**Check 1: Is `GEN2_API_KEY` set?**
+
+Profile extraction uses `GEN2_API_KEY`. If it's missing or invalid, extraction silently skips. Check `.env`:
+```
+GEN2_API_KEY=your_gemini_api_key_here
+```
+
+**Check 2: Check stderr output**
+
+Ana prints extraction outcomes to `stderr`. Look for lines like:
+```
+[profile] No GEM2_API_KEY set, skipping extraction
+[profile] No profile info extracted from message
+[profile] Updated Kælith profile: age, location
+[profile] Extraction failed for Kælith: 403
+```
+If you see `403`, the API key is invalid or not enabled. If you see `No profile info extracted`, the message was probably too short or contained no personal details.
+
+**Check 3: Message too short**
+
+Extraction only runs on messages over ~15 characters. Very short messages like `"ana lol"` are skipped.
+
+**Check 4: Profile file location**
+
+Profile files live in `data/profiles/{display-name}.json`. If the `data/profiles/` directory doesn't exist, Python creates it automatically on first write. Check the directory exists and you have write permissions.
+
+---
+
+## Reminder didn't fire / fired at wrong time
+
+**Check 1: `!myreminders` to inspect**
+
+Run `!myreminders` to see if the reminder was actually saved and what time it's set for. All times are IST.
+
+**Check 2: Is the bot running continuously?**
+
+The reminder check loop runs every 60 seconds. If the bot restarted after you set a reminder, the loop restarts and will catch due reminders on the next minute tick.
+
+**Check 3: Is `GEN2_API_KEY` set?**
+
+Reminder wish generation uses `GEN2_API_KEY`. If the key is missing, the bot can't generate the wish message and the reminder won't fire correctly. Check stderr for errors.
+
+**Check 4: Was the channel deleted?**
+
+Reminders fire to the channel where they were set. If that channel no longer exists, the reminder silently fails. You'll see a `discord.NotFound` in stderr.
+
+**Check 5: Parsing a weird date**
+
+Gemini resolves relative dates based on the current IST time at parse time. If you set a reminder for `"tomorrow 9am"` at 11 PM IST on March 19, it would resolve to March 20 at 9:00 AM IST. Confirm the resolved time with `!myreminders` immediately after setting.
 
 ---
 

@@ -12,7 +12,7 @@
 
 *Ana started as a simple AI reply bot. She's grown into something that regularly fools people into thinking there's a real, very online, chaotic 20-something in the server. She has opinions. She fires back when insulted. She flirts. She gets distracted mid-thought. She's the bit.*
 
-Ana is a Python Discord bot wired to a cascading AI waterfall — Kimi K2 as the primary engine via Groq, backed by Llama 3.3 70B, Llama 4 Scout, and Qwen 3 32B in sequence, then dual Gemini Flash fallbacks. She's built to be indistinguishable from a human server member: reading delay before typing, proportional typing delays, occasional typo-then-correction, a distinct roast mode that bypasses all cooldowns when someone's being rude, a flirt mode with improvised NSFW-capable pick-up lines, multi-user group chat awareness with per-speaker conversation history, Discord mention resolution, reply-thread context injection, emoji reactions, unprompted follow-up messages, and AI artefact stripping on every reply. On untriggered messages she has a configurable 15% chance of dropping a live-fetched dad joke. A Flask keepalive on port 8080 keeps her alive on any hosting platform.
+Ana is a Python Discord bot wired to a cascading AI waterfall — Kimi K2 as the primary engine via Groq, backed by Llama 3.3 70B, Llama 4 Scout, and Qwen 3 32B in sequence, then dual Gemini Flash fallbacks. She's built to be indistinguishable from a human server member: reading delay before typing, proportional typing delays, occasional typo-then-correction, a distinct roast mode that bypasses all cooldowns when someone's being rude, a flirt mode with improvised NSFW-capable pick-up lines, multi-user group chat awareness with per-speaker conversation history, Discord mention resolution, reply-thread context injection, emoji reactions, unprompted follow-up messages, and AI artefact stripping on every reply. A background task silently extracts personal details from every message and stores them per-user in `data/profiles/` — so Ana remembers things across sessions. A smart reminder system (`!remindme`) lets members set natural-language reminders that Ana fires with an AI-generated wish at the right time. On untriggered messages she has a configurable 15% chance of dropping a live-fetched dad joke. A Flask keepalive on port 8080 keeps her alive on any hosting platform.
 
 ---
 
@@ -33,18 +33,23 @@ Ana is a Python Discord bot wired to a cascading AI waterfall — Kimi K2 as the
 
 ## 🧠 System Overview
 
-Ana is structured as a single async Python process: `main.py` owns the Discord client and routes all events; `nlp.py` runs the AI reply pipeline (with per-mode prompts and a deterministic `post_process()` that strips every AI artefact); `jokes.py` manages the dad-joke lifecycle; `keepalive.py` runs Flask in a daemon thread; and `config.py` loads everything from `.env` at startup.
+Ana is structured as a single async Python process: `main.py` owns the Discord client and routes all events; `nlp.py` runs the AI reply pipeline (with per-mode prompts and a deterministic `post_process()` that strips every AI artefact); `profiles.py` silently extracts and stores per-user personal details in the background; `reminders.py` parses natural-language reminders and fires AI-generated wishes at the right time; `jokes.py` manages the dad-joke lifecycle; `keepalive.py` runs Flask in a daemon thread; and `config.py` loads everything from `.env` at startup.
 
 ```
 Ana/
-├── main.py             # Discord client, on_message, commands (!joke, !shutdown)
+├── main.py             # Discord client, on_message, commands, background tasks
 ├── nlp.py              # AI pipeline: Groq → Gemini Gen1 → Gemini Gen2 → static
+├── profiles.py         # Per-user profile extraction + storage (data/profiles/)
+├── reminders.py        # Reminder parse, store, wish generation (data/reminders/)
 ├── jokes.py            # DadJokeService: live fetch, 60s cooldown, 3/day cap
 ├── config.py           # .env loader, JokeSettings, TRIGGER/ROAST/FLIRT_WORDS
 ├── keepalive.py        # Flask GET / → "Bot is alive!" on :8080
 ├── requirements.txt    # 5 pip dependencies
 ├── .env.example        # Template — copy to .env and fill in your keys
 ├── setup_autostart.sh  # One-shot Raspberry Pi systemd setup script
+├── data/
+│   ├── profiles/       # Per-user JSON files (created automatically)
+│   └── reminders/      # reminders.json store (created automatically)
 ├── assets/             # SVG diagrams referenced by this README
 └── wiki/               # Extended documentation
 ```
@@ -67,6 +72,8 @@ Ana/
 | 🎯 **100+ Trigger Words** | Greetings, emotions, celebrations, cultural holidays, Gen-Z slang, multilingual phrases, roast words, and flirt words — all configurable |
 | ⚙️ **Fully Configurable** | `JOKE_CHANCE`, `JOKE_COOLDOWN`, `SYSTEM_PROMPT`, all API keys — every runtime value overridable via `.env` |
 | 🌐 **Keepalive Server** | Flask endpoint at `GET /` returns `Bot is alive!` so Railway/Render/UptimeRobot health checks pass |
+| 🧠 **Member Profiles** | After every reply, Gemini silently extracts personal details the user explicitly stated (name, age, location, favourites, interests) in a background task. Deep-merged into `data/profiles/{name}.json`. Injected into the system prompt so Ana remembers things across sessions. |
+| ⏰ **Smart Reminders** | `!remindme <natural language>` — Gemini resolves relative dates, infers occasion type, and stores the reminder. A background task fires every minute; when due, Ana @mentions the user with an AI-generated wish in her voice. `!myreminders` and `!cancelreminder` included. |
 | 🔒 **Cooldown System** | Per-user 25s cooldown + per-channel 7s cooldown prevent spam; roasts always go through regardless |
 | 🍓 **Raspberry Pi Ready** | `setup_autostart.sh` installs a systemd service in one command — auto-starts on every reboot, waits for network, restarts on crash |
 
@@ -89,6 +96,9 @@ Ana uses the `!` prefix for explicit commands.
 | Command | Who | What happens |
 |---|---|---|
 | `!joke` | Everyone | Live-fetches a fresh dad joke from `icanhazdadjoke.com`, bypassing cooldown and daily cap |
+| `!remindme <text>` | Everyone | Free-form NL: `!remindme march 20 10am mum's birthday` — Gemini parses and stores it |
+| `!myreminders` | Everyone | Lists your pending reminders with short IDs and scheduled IST times |
+| `!cancelreminder <id>` | Everyone | Cancels a pending reminder by its 8-char ID prefix |
 | `!shutdown` | Bot owner only | Ana says a quick casual goodbye, then closes cleanly |
 
 ### `!joke` example
@@ -159,6 +169,7 @@ Discord on_message
                       │    ├─ 12% chance → emoji reaction only
                       │    ├─ 4%  chance → send with typo → send *correction
                       │    └─ reading delay 0.5–3s
+                      │         → profile_store.format_for_context(uid)  ← inject memory
                       │         → process_with_nlp()  [Groq waterfall → Gemini x2 → static]
                       │         → post_process()
                       │         → proportional typing delay (0.8–5.0s)
@@ -304,17 +315,19 @@ kiss · love you · wanna go out · be mine · dream girl
 
 ```
 Ana/
-├── 🐍 main.py          # Entry point. Discord client setup, on_message routing,
-│                       # !joke and !shutdown command handlers, asyncio glue
+├── 🐍 main.py          # Discord client, on_message routing, commands,
+│                       # background tasks (_check_reminders, _update_profile_bg)
 ├── 🧠 nlp.py           # process_with_nlp(): Groq → Gemini Gen1 → Gemini Gen2
-│                       # → static fallback. Each stage in its own try/except.
-├── 😂 jokes.py         # DadJokeService class. random_joke() fetches live from
-│                       # icanhazdadjoke.com. maybe_send_joke() enforces cooldown
-│                       # and daily cap (max 3/channel/day).
-├── ⚙️  config.py        # load_dotenv() + typed env helpers. JokeSettings frozen
-│                       # dataclass. TRIGGER_WORDS tuple. Warns on missing keys.
-├── 🌐 keepalive.py     # Flask app. GET / → 200 "Bot is alive!". Runs in a
-│                       # daemon Thread so it doesn't block the event loop.
+│                       # → static fallback. IST timezone. post_process() stripper.
+├── 👤 profiles.py      # ProfileStore: per-user JSON files in data/profiles/
+│                       # extract_profile_info() calls Gemini in background.
+├── ⏰ reminders.py     # ReminderStore: data/reminders/reminders.json
+│                       # parse_reminder() + generate_wish() via Gemini.
+├── 😂 jokes.py         # DadJokeService: live fetch from icanhazdadjoke.com,
+│                       # 60s cooldown, max 3/channel/day.
+├── ⚙️  config.py        # load_dotenv(), typed env helpers, JokeSettings,
+│                       # TRIGGER/ROAST/FLIRT_WORDS. Warns on missing keys.
+├── 🌐 keepalive.py     # Flask on :8080. Security headers. Daemon thread.
 ├── 📦 requirements.txt # discord.py · flask>=3 · python-dotenv · requests · groq
 ├── 🔒 .env             # NOT committed. Your API keys live here.
 ├── 📄 .gitignore       # .env · __pycache__ · *.pyc · venv/
@@ -322,8 +335,11 @@ Ana/
 ├── 📝 CHANGELOG.md     # Version history
 ├── 🤝 CONTRIBUTING.md  # How to contribute
 ├── 🔐 SECURITY.md      # Security policy
-└── 🗂️  assets/          # SVG diagrams (hero-banner, architecture, data-flow,
-                        # capabilities, stats)
+├── 🗂️  assets/          # SVG diagrams (hero-banner, architecture, data-flow,
+│                       # capabilities, stats)
+└── 📂 data/
+    ├── profiles/       # Per-user profile JSON files (auto-created)
+    └── reminders/      # reminders.json store (auto-created)
 ```
 
 ---
@@ -343,10 +359,13 @@ Ana/
 Ana processes messages **only when triggered** — she's not reading everything in silence (unlike that one friend who screenshots your whole server).
 
 - ✅ Messages processed only when they contain a **trigger word**
-- ✅ No messages stored, logged, or persisted to disk
+- ✅ Message content is **not** stored verbatim — only personal facts explicitly mentioned by the user are extracted and stored in per-user profile files
+- ✅ Profile data stored in `data/profiles/{name}.json` on the host's local disk
+- ✅ Reminder records stored in `data/reminders/reminders.json` (includes user ID, channel ID, occasion)
 - ✅ API calls to Groq/Gemini include only the triggering message content, truncated to 1000 characters
 - ✅ `.env` is gitignored — your API keys stay on your machine
 - ❗ Groq and Google handle their respective API traffic under their own privacy policies
+- ❗ Server members should be informed that personal details they explicitly share may be stored
 
 ---
 

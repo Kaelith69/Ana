@@ -68,6 +68,8 @@ DISCORD_TOKEN=your_discord_bot_token_here
 GROQ_API_KEY=your_groq_api_key_here
 
 # Optional — Gemini fallbacks (highly recommended)
+# GEN1_API_KEY: used as first AI fallback after Groq waterfall
+# GEN2_API_KEY: used as second AI fallback + profile extraction + reminder parsing/wishes
 GEN1_API_KEY=your_gemini_gen1_api_key_here
 GEN2_API_KEY=your_gemini_gen2_api_key_here
 
@@ -81,6 +83,8 @@ JOKE_FETCH_TIMEOUT=8      # HTTP timeout for icanhazdadjoke.com
 ```
 
 > **Never commit `.env` to git.** It's already in `.gitignore`. The `.env.example` file (no real keys) is safe to commit and is included in the repo as a reference.
+
+> **Note:** Ana automatically creates `data/profiles/` and `data/reminders/` directories on first use. No manual directory setup is required. See the [Privacy](Privacy) page for what's stored there.
 
 ---
 
