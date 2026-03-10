@@ -619,6 +619,10 @@ def post_process(text: str) -> str:
         for sep in ('. ', '! ', '? '):
             idx = text.find(sep, 25)
             if 25 < idx < len(text) - 5:
+                # Skip if this '. ' is the trailing dot of an ellipsis ('...' or '..')
+                # — splitting there would chop mid-thought rather than at a real sentence end.
+                if sep == '. ' and idx >= 1 and text[idx - 1] == '.':
+                    continue
                 text = text[:idx].rstrip()
                 break
     return text

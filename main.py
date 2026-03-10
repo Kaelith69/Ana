@@ -290,12 +290,12 @@ async def joke(ctx):
 @tasks.loop(hours=1)
 async def _cleanup_cooldowns() -> None:
     """Periodically prune stale entries from the cooldown dicts and history to bound memory use."""
-    cutoff = asyncio.get_running_loop().time()
-    stale_history = [cid for cid, ts in _channel_last_reply.items() if cutoff - ts > 3600]
+    now = asyncio.get_running_loop().time()
+    stale_history = [cid for cid, ts in _channel_last_reply.items() if now - ts > 3600]
     for cid in stale_history:
         _history.pop(cid, None)
-    stale_users = [uid for uid, ts in _user_last_reply.items() if cutoff - ts > USER_COOLDOWN * 20]
-    stale_channels = [cid for cid, ts in _channel_last_reply.items() if cutoff - ts > CHANNEL_COOLDOWN * 20]
+    stale_users = [uid for uid, ts in _user_last_reply.items() if now - ts > USER_COOLDOWN * 20]
+    stale_channels = [cid for cid, ts in _channel_last_reply.items() if now - ts > CHANNEL_COOLDOWN * 20]
     for uid in stale_users:
         del _user_last_reply[uid]
     for cid in stale_channels:
@@ -403,7 +403,9 @@ async def on_message(message):
                         f"[replying to @{ref_author}: \"{ref_text}\"]\n{resolved_content}"
                     )
 
-        history = list(_history[cid])
+        # Use .get() to avoid creating a spurious empty deque in the defaultdict
+        # for channels where Ana has never replied — prevents unbounded memory growth.
+        history = list(_history.get(cid, []))
 
         # Simulate reading the message before typing — humans don't react at network speed.
         # Proportional to message length; roasts fire back faster (she's already mad).

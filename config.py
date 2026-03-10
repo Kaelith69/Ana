@@ -272,7 +272,7 @@ ROAST_WORDS = frozenset({
     "go cry", "womp", "flop era", "clapped", "ur done", "ur cooked",
     "get good", "L", "take the L", "you lost", "massive L",
     "not funny", "no one cares", "who asked", "nt", "get rekt",
-    "trash tier", "bottom tier", "low tier", "expired", "irrelevant",
+    "trash tier", "bottom tier", "low tier", "expired",
     "delete yourself", "log off", "go outside", "touch some grass",
 })
 
