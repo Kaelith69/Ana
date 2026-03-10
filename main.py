@@ -416,14 +416,19 @@ async def _update_profile_bg(user_id: int, display_name: str, text: str) -> None
     """Background task: extract personal details from a message and update the profile store.
 
     Runs via asyncio.create_task after Ana's reply is sent — never delays the response.
-    All failures are completely silent.
     """
     try:
+        if not GEN2_API_KEY:
+            print(f"[profile] skipped for {display_name!r}: GEN2_API_KEY not set", file=sys.stderr)
+            return
         extracted = await asyncio.to_thread(extract_profile_info, text, GEN2_API_KEY)
         if extracted:
             await asyncio.to_thread(profile_store.update, user_id, display_name, extracted)
-    except Exception:
-        pass
+            print(f"[profile] updated {display_name!r}: {list(extracted.keys())}", file=sys.stderr)
+        else:
+            print(f"[profile] no info extracted for {display_name!r} (msg len={len(text)})", file=sys.stderr)
+    except Exception as e:
+        print(f"[profile] error for {display_name!r}: {e}", file=sys.stderr)
 
 
 @bot.command()

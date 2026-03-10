@@ -86,7 +86,7 @@ FLIRT_PROMPT = (
 
 # Models
 GEN1_MODEL = "gemini-1.5-flash-latest"
-GEN2_MODEL = "gemini-2.5-flash-lite"
+GEN2_MODEL = "gemini-flash-latest"
 
 # Groq client (instantiated once, with an explicit network timeout)
 _groq_client: Optional[Groq] = Groq(api_key=GROQ_API_KEY, timeout=30.0) if GROQ_API_KEY else None

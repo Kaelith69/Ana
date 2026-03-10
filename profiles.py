@@ -25,7 +25,7 @@ import requests
 
 _PROFILES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "profiles")
 _LOCK = threading.Lock()
-_EXTRACTION_MODEL = "gemini-2.5-flash-lite"
+_EXTRACTION_MODEL = "gemini-flash-latest"
 
 _EXTRACTION_PROMPT = (
     "You are a personal-detail extractor for a Discord chatbot.\n"
@@ -295,6 +295,8 @@ def extract_profile_info(text: str, api_key: Optional[str]) -> dict:
     try:
         resp = requests.post(url, headers=headers, json=payload, timeout=15)
         if resp.status_code != 200:
+            import sys
+            print(f"[profile] Gemini extraction HTTP {resp.status_code}: {resp.text[:200]}", file=sys.stderr)
             return {}
         result = resp.json()
         candidates = result.get("candidates", [])
