@@ -10,7 +10,7 @@ from discord.ext import commands, tasks
 from config import DISCORD_TOKEN, JOKE_SETTINGS, TRIGGER_WORDS, ROAST_WORDS, FLIRT_WORDS, GEN2_API_KEY
 from jokes import DadJokeService
 from keepalive import start_keepalive
-from nlp import process_with_nlp, _api_safe_name
+from nlp import process_with_nlp, _api_safe_name, FALLBACK_RESPONSES
 from profiles import profile_store, extract_profile_info
 from reminders import reminder_store, parse_reminder, generate_wish
 
@@ -31,10 +31,15 @@ _history: dict[int, deque] = defaultdict(lambda: deque(maxlen=20))
 # Per-user last-reply timestamp (user_id -> monotonic time)
 _user_last_reply: dict[int, float] = {}
 USER_COOLDOWN = 25  # seconds between replies to the same user
+MENTION_USER_COOLDOWN = 6  # shorter cooldown for explicit mentions to prevent mention spam floods
 
 # Per-channel last-reply timestamp (channel_id -> monotonic time)
 _channel_last_reply: dict[int, float] = {}
 CHANNEL_COOLDOWN = 7  # seconds between any replies in the same channel
+
+# Bound concurrent NLP calls to avoid thread-pool pressure under bursty traffic.
+NLP_CONCURRENCY_LIMIT = 8
+_nlp_semaphore = asyncio.Semaphore(NLP_CONCURRENCY_LIMIT)
 
 # Strong references to in-flight background profile-extraction tasks.
 # asyncio.create_task only keeps a weak ref — without this the task could be GC'd mid-run.
@@ -248,100 +253,7 @@ _FOLLOWUPS = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Sleep / wake routine
-# ---------------------------------------------------------------------------
-
 _IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-
-# Persistent channel ID for sleep/wake announcements.
-# Unlike _channel_last_reply, this is NEVER pruned by the cleanup task —
-# so _ana_wake() can always find the last active channel even after the
-# 5.5h idle sleep window empties _channel_last_reply.
-_announcement_channel_id: int | None = None
-
-
-def _is_sleeping() -> bool:
-    """Return True during Ana's sleep window: 00:00–05:29 IST."""
-    now = datetime.datetime.now(_IST)
-    return now.hour < 5 or (now.hour == 5 and now.minute < 30)
-
-
-def _best_channel():
-    """Return the most recently active TextChannel Ana has spoken in, or None."""
-    # Prefer _channel_last_reply (most recent activity) but fall back to the
-    # persistent _announcement_channel_id which is never pruned by cleanup.
-    cid: int | None = None
-    if _channel_last_reply:
-        cid = max(_channel_last_reply, key=lambda k: _channel_last_reply[k])
-    elif _announcement_channel_id is not None:
-        cid = _announcement_channel_id
-    if cid is None:
-        return None
-    ch = bot.get_channel(cid)
-    # Guard: only return the channel if it's actually messageable (not a voice/category channel).
-    if isinstance(ch, discord.abc.Messageable):
-        return ch
-    return None
-
-
-_SLEEP_AFK_RESPONSES = [
-    "i'm literally asleep rn",
-    "zzz",
-    "asleep. come back after 5:30.",
-    "i cannot with you rn. sleeping.",
-    "not available. sleeping.",
-    "...sleeping bro",
-    "it's the middle of the night what do you want",
-    "asleep. bye.",
-    "i'm offline till morning",
-    "do not disturb. genuinely.",
-]
-
-_GOODNIGHT_LINES = [
-    "okay i'm going. gn everyone.",
-    "aiyyo it's midnight. gn.",
-    "ok gn. don't do anything stupid while i'm gone.",
-    "sleep is pulling me. gn 💀",
-    "ok i'm logging off. gn.",
-    "goodnight. don't miss me too much.",
-    "it's that time. gn.",
-    "ok i'm done for the night. gn.",
-    "gn. try not to implode without me.",
-    "alright i'm out. gn everyone.",
-    "okay i'm disappearing now. gn.",
-    "tired. gn.",
-    "gn. don't be weird while i'm asleep.",
-    "ok logging off. this was a choice.",
-    "aiyyo getting offline. gn.",
-    "sleepy. bye.",
-    "can't keep my eyes open. gn everyone.",
-    "okay going now. gn.",
-    "i'm out. gn. behave.",
-    "gn. i'd say see u tomorrow but that's technically today now.",
-]
-
-_GOODMORNING_LINES = [
-    "ok i'm back. barely.",
-    "it is 5:30am and i've made a terrible decision to be awake.",
-    "gm i guess.",
-    "ok i'm here. gm.",
-    "aiyyo morning.",
-    "gm. don't talk to me for 20 minutes.",
-    "ok i'm awake. somehow.",
-    "back. don't make me regret it.",
-    "gm. coffee first, everything else later.",
-    "morning. i'll be human in approximately one cup.",
-    "okay woke up. barely counts but here we are.",
-    "aiyyo it's early. gm.",
-    "gm. don't expect too much from me yet.",
-    "technically awake.",
-    "alive. questionably. gm.",
-    "gm. the sun has no right to be that bright.",
-    "back. not happy about it but back.",
-    "ok good morning or whatever. still waking up.",
-    "aiyyo. peak hours resuming.",
-]
 
 
 def _resolve_mentions(content: str, message: discord.Message) -> str:
@@ -445,7 +357,6 @@ async def shutdown(ctx):
         await ctx.send(line)
         await asyncio.sleep(1.5)
     await bot.close()
-    sys.exit(0)
 
 _JOKE_SETUPS = [
     "okay don't judge me",
@@ -498,10 +409,8 @@ async def remindme(ctx, *, text: str = ""):
         return
     # Warn if the reminder is already in the past
     try:
-        import datetime as _dt
-        _IST_TZ = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
-        reminder_dt = _dt.datetime.fromisoformat(reminder["datetime_ist"]).replace(tzinfo=_IST_TZ)
-        now_ist = _dt.datetime.now(_IST_TZ)
+        reminder_dt = datetime.datetime.fromisoformat(reminder["datetime_ist"]).replace(tzinfo=_IST)
+        now_ist = datetime.datetime.now(_IST)
         if reminder_dt <= now_ist:
             await ctx.send("that date's already passed — double check and try again")
             return
@@ -526,9 +435,7 @@ async def myreminders(ctx):
     lines = ["upcoming reminders:"]
     for r in pending:
         try:
-            import datetime as _dt
-            _IST_TZ = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
-            dt = _dt.datetime.fromisoformat(r["datetime_ist"]).replace(tzinfo=_IST_TZ)
+            dt = datetime.datetime.fromisoformat(r["datetime_ist"]).replace(tzinfo=_IST)
             dt_str = dt.strftime("%d %b %Y %I:%M %p IST")
         except Exception:
             dt_str = r["datetime_ist"]
@@ -588,27 +495,12 @@ async def _cleanup_cooldowns() -> None:
         _history.pop(cid, None)
 
 
-@tasks.loop(time=datetime.time(hour=0, minute=0, second=0, tzinfo=_IST))
-async def _ana_sleep() -> None:
-    """Send a goodnight message at midnight IST."""
-    ch = _best_channel()
-    if ch is None:
-        return
-    try:
-        async with ch.typing():
-            await asyncio.sleep(random.uniform(0.8, 1.8))
-        await ch.send(random.choice(_GOODNIGHT_LINES))
-    except (discord.HTTPException, OSError):
-        pass
-
-
 @tasks.loop(minutes=1)
 async def _check_reminders() -> None:
     """Fire due reminders every minute with AI-generated wish/reminder messages."""
     now_ist = datetime.datetime.now(_IST)
     due = await asyncio.to_thread(reminder_store.get_due, now_ist)
     for reminder in due:
-        await asyncio.to_thread(reminder_store.mark_done, reminder["id"])
         channel = bot.get_channel(reminder["channel_id"])
         if not isinstance(channel, discord.abc.Messageable):
             continue
@@ -617,24 +509,17 @@ async def _check_reminders() -> None:
             msg = f"hey — reminder: {reminder['occasion']}"
         try:
             user = bot.get_user(reminder["user_id"])
+            if user is None:
+                try:
+                    user = await bot.fetch_user(reminder["user_id"])
+                except (discord.HTTPException, OSError):
+                    user = None
             mention = user.mention if user else f"@{reminder['user_name']}"
             await channel.send(f"{mention} {msg}")
+            # Mark done only after a successful send so reminders are never dropped.
+            await asyncio.to_thread(reminder_store.mark_done_if_pending, reminder["id"])
         except (discord.HTTPException, OSError) as e:
-            print(f"[reminders] send failed: {e}", file=sys.stderr)
-
-
-@tasks.loop(time=datetime.time(hour=5, minute=30, second=0, tzinfo=_IST))
-async def _ana_wake() -> None:
-    """Send a goodmorning message at 05:30 IST."""
-    ch = _best_channel()
-    if ch is None:
-        return
-    try:
-        async with ch.typing():
-            await asyncio.sleep(random.uniform(1.0, 2.0))
-        await ch.send(random.choice(_GOODMORNING_LINES))
-    except (discord.HTTPException, OSError):
-        pass
+            print(f"[reminders] send failed for id={reminder.get('id')}: {e}", file=sys.stderr)
 
 
 @bot.event
@@ -642,10 +527,6 @@ async def on_ready():
     print(f"✅ Logged in as {bot.user}")
     if not _cleanup_cooldowns.is_running():
         _cleanup_cooldowns.start()
-    if not _ana_sleep.is_running():
-        _ana_sleep.start()
-    if not _ana_wake.is_running():
-        _ana_wake.start()
     if not _check_reminders.is_running():
         _check_reminders.start()
 
@@ -668,16 +549,6 @@ async def on_message(message):
                   or bool(FLIRT_PATTERN.search(content)))
     
     if is_trigger:
-        # Sleep guard — Ana is unavailable during her sleep window (00:00–05:29 IST).
-        # No LLM calls are made; a static AFK message is sent instead.
-        if _is_sleeping():
-            await asyncio.sleep(random.uniform(0.4, 1.2))
-            try:
-                await message.channel.send(random.choice(_SLEEP_AFK_RESPONSES))
-            except (discord.HTTPException, OSError):
-                pass
-            return
-
         now = asyncio.get_running_loop().time()
         uid = message.author.id
         cid = message.channel.id
@@ -708,11 +579,12 @@ async def on_message(message):
             return
 
         # Channel cooldown — don't pile on if she just replied here (roasts always go through)
-        if not mentioned and not is_roast and now - _channel_last_reply.get(cid, 0) < CHANNEL_COOLDOWN:
+        if not is_roast and now - _channel_last_reply.get(cid, 0) < CHANNEL_COOLDOWN:
             return
 
-        # Per-user cooldown — roasts always get a reply; otherwise do the "seen" reaction
-        if not mentioned and not is_roast and now - _user_last_reply.get(uid, 0) < USER_COOLDOWN:
+        # Per-user cooldown — mentions use a shorter throttle; roasts always bypass.
+        _user_cooldown = MENTION_USER_COOLDOWN if mentioned else USER_COOLDOWN
+        if not is_roast and now - _user_last_reply.get(uid, 0) < _user_cooldown:
             await asyncio.sleep(random.uniform(0.5, 2.5))  # humans don't react instantly
             try:
                 await message.add_reaction(_pick_reaction(content, is_flirt))
@@ -721,7 +593,7 @@ async def on_message(message):
             return
 
         # ~12% chance to just react instead of replying (never on roasts — she always fires back)
-        if not mentioned and not is_roast and random.random() < 0.12:
+        if not is_roast and random.random() < 0.12:
             try:
                 await message.add_reaction(_pick_reaction(content, is_flirt))
             except (discord.HTTPException, OSError):
@@ -731,7 +603,7 @@ async def on_message(message):
 
         # ~6% chance of ghost typing — she starts typing then goes quiet
         # very human: read it, thought about it, decided not to engage
-        if not mentioned and not is_roast and random.random() < 0.06:
+        if not is_roast and random.random() < 0.06:
             try:
                 async with message.channel.typing():
                     await asyncio.sleep(random.uniform(1.5, 4.0))
@@ -741,7 +613,7 @@ async def on_message(message):
             return
 
         # ~10% chance to also react on top of reply (skip for roasts — no softening)
-        if not mentioned and not is_roast and random.random() < 0.10:
+        if not is_roast and random.random() < 0.10:
             try:
                 await message.add_reaction(_pick_reaction(content, is_flirt))
             except (discord.HTTPException, OSError):
@@ -797,11 +669,22 @@ async def on_message(message):
             await asyncio.sleep(read_delay)
 
             async with message.channel.typing():
-                reply = await asyncio.to_thread(
-                    process_with_nlp,
-                    text_to_process, history, author_name, is_roast, is_flirt,
-                    user_profile_context,
-                )
+                try:
+                    async with _nlp_semaphore:
+                        reply = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                process_with_nlp,
+                                text_to_process, history, author_name, is_roast, is_flirt,
+                                user_profile_context,
+                            ),
+                            timeout=90.0,
+                        )
+                except asyncio.TimeoutError:
+                    print(
+                        f"[nlp] all APIs timed out after 90s for uid={uid} — using fallback",
+                        file=sys.stderr,
+                    )
+                    reply = random.choice(FALLBACK_RESPONSES)
                 # Roasts: fast angry typing (0.4-1.2s). Others: proportional to reply length.
                 if is_roast:
                     extra = random.uniform(0.4, 1.2)
@@ -829,8 +712,6 @@ async def on_message(message):
                 _sent_at = asyncio.get_running_loop().time()
                 _user_last_reply[uid] = _sent_at
                 _channel_last_reply[cid] = _sent_at
-                global _announcement_channel_id
-                _announcement_channel_id = cid  # persist for sleep/wake announcements
                 parts = _split_reply(reply)
                 # Typo+correction only on non-roast replies (she's not typo-ing when she's mad)
                 first_part, correction = _maybe_typo(parts[0]) if not is_roast else (parts[0], None)
@@ -864,14 +745,30 @@ async def on_message(message):
                     async with message.channel.typing():
                         await asyncio.sleep(random.uniform(0.5, 1.5))
                     await message.channel.send(random.choice(_FOLLOWUPS))
-        except (discord.HTTPException, OSError):
-            pass
+        except (discord.HTTPException, OSError) as _msg_err:
+            print(f"[on_message] Discord/OS error (uid={uid}): {_msg_err}", file=sys.stderr)
     else:
-        if not _is_sleeping():
-            try:
-                await joke_service.maybe_send_joke(message.channel)
-            except (discord.HTTPException, OSError):
-                pass
+        try:
+            await joke_service.maybe_send_joke(message.channel)
+        except (discord.HTTPException, OSError) as _joke_err:
+            print(f"[joke] send failed in channel={message.channel.id}: {_joke_err}", file=sys.stderr)
+
+@bot.event
+async def on_command_error(ctx, error):
+    """Prevent unhandled command errors from logging noisy tracebacks and give users feedback."""
+    if isinstance(error, commands.NotOwner):
+        return  # silently ignore — don't expose that owner-only commands exist
+    if isinstance(error, commands.CommandNotFound):
+        return  # ignore unknown commands — Ana uses free-form text, not a command bot
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send(f"missing argument: `{error.param.name}`")
+        return
+    if isinstance(error, commands.CommandOnCooldown):
+        await ctx.send(f"slow down — try again in {error.retry_after:.0f}s")
+        return
+    # Log unexpected errors to stderr so they're visible in hosting logs
+    print(f"[command_error] {ctx.command}: {error!r}", file=sys.stderr)
+
 
 def main():
     if not DISCORD_TOKEN:

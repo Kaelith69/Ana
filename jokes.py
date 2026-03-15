@@ -9,6 +9,22 @@ import requests
 
 from config import JokeSettings
 
+
+def _get_with_retries(url: str, *, headers: dict, timeout: float, attempts: int = 3) -> Optional[requests.Response]:
+    """GET with bounded retry/backoff for transient network and 5xx/429 responses."""
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.get(url, headers=headers, timeout=timeout)
+            if resp.status_code in (429, 500, 502, 503, 504) and attempt < attempts:
+                time.sleep(0.3 * attempt)
+                continue
+            return resp
+        except requests.RequestException:
+            if attempt >= attempts:
+                return None
+            time.sleep(0.3 * attempt)
+    return None
+
 # Static string pools — defined at module level to avoid re-allocating on every call.
 _JOKE_INTROS = [
     "okay wait i need to share this",
@@ -59,13 +75,21 @@ class DadJokeService:
     def random_joke(self) -> Optional[str]:
         """Fetch a live dad joke from the API."""
         headers = {"Accept": "application/json", "User-Agent": "DadJokeDiscordBot/2.0"}
-        try:
-            res = requests.get(self.settings.api_url, headers=headers, timeout=self.settings.fetch_timeout)
-            if res.status_code == 200:
+        res = _get_with_retries(
+            self.settings.api_url,
+            headers=headers,
+            timeout=float(self.settings.fetch_timeout),
+            attempts=3,
+        )
+        if res is None:
+            print("Failed to fetch dad joke: network failure after retries")
+            return None
+        if res.status_code == 200:
+            try:
                 data = res.json()
-                return data.get("joke") or None
-        except requests.RequestException as err:
-            print(f"Failed to fetch dad joke: {err}")
+            except ValueError:
+                return None
+            return data.get("joke") or None
         return None
 
     async def maybe_send_joke(self, channel) -> None:

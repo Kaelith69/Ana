@@ -19,6 +19,7 @@ import json
 import os
 import re
 import threading
+import time
 from typing import Optional
 
 import requests
@@ -48,6 +49,29 @@ _EXTRACTION_PROMPT = (
     "  - Output ONLY valid JSON — no explanation, no markdown code fences.\n\n"
     "Message:\n"
 )
+
+
+def _post_with_retries(
+    url: str,
+    *,
+    headers: dict,
+    payload: dict,
+    timeout: float,
+    attempts: int = 3,
+) -> Optional[requests.Response]:
+    """POST with bounded retry/backoff for transient network and 5xx/429 responses."""
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            if resp.status_code in (429, 500, 502, 503, 504) and attempt < attempts:
+                time.sleep(0.3 * attempt)
+                continue
+            return resp
+        except requests.RequestException:
+            if attempt >= attempts:
+                return None
+            time.sleep(0.3 * attempt)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +317,11 @@ def extract_profile_info(text: str, api_key: Optional[str]) -> dict:
     }
 
     try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=15)
+        resp = _post_with_retries(url, headers=headers, payload=payload, timeout=15, attempts=3)
+        if resp is None:
+            import sys
+            print("[profile] Gemini extraction network failure after retries", file=sys.stderr)
+            return {}
         if resp.status_code != 200:
             import sys
             print(f"[profile] Gemini extraction HTTP {resp.status_code}: {resp.text[:200]}", file=sys.stderr)

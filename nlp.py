@@ -3,6 +3,7 @@ import requests
 import json
 import random
 import re
+import time
 from typing import List, Optional
 from groq import Groq, RateLimitError as GroqRateLimitError
 from config import (
@@ -187,6 +188,29 @@ _RE_PAREN_ACTION = re.compile(
     r'|dryly)[^)]{0,30}\)\s*',
     re.IGNORECASE,
 )
+
+
+def _post_with_retries(
+    url: str,
+    *,
+    headers: dict,
+    payload: dict,
+    timeout: float,
+    attempts: int = 3,
+) -> Optional[requests.Response]:
+    """POST with bounded retry/backoff for transient network and 5xx/429 responses."""
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            if resp.status_code in (429, 500, 502, 503, 504) and attempt < attempts:
+                time.sleep(0.35 * attempt + random.uniform(0.0, 0.2))
+                continue
+            return resp
+        except requests.RequestException:
+            if attempt >= attempts:
+                return None
+            time.sleep(0.35 * attempt + random.uniform(0.0, 0.2))
+    return None
 
 # AI empathy / support-bot openers — only patterns that are unambiguously chatbot dialect.
 # Deliberately minimal: only standalone openers unlikely to appear mid-sentence in valid text.
@@ -592,15 +616,20 @@ def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Op
         },
     }
 
-    try:
-        response = requests.post(api_url, headers=headers, json=data, timeout=30)
-    except Exception as e:
-        print(f"{label} request error: {e}")
+    response = _post_with_retries(
+        api_url,
+        headers=headers,
+        payload=data,
+        timeout=30,
+        attempts=3,
+    )
+    if response is None:
+        print(f"{label} request error: network failure after retries")
         return None
 
     if response.status_code != 200:
         print(f"{label} Error: {response.status_code}")
-        print(response.text)
+        print(response.text[:300])
         return None
 
     try:

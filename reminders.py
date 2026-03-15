@@ -23,6 +23,7 @@ import json
 import os
 import re
 import threading
+import time
 import uuid
 from typing import Optional
 
@@ -36,6 +37,30 @@ _GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     "gemini-flash-latest:generateContent"
 )
+_ALLOWED_OCCASION_TYPES = {"birthday", "anniversary", "wedding", "exam", "meeting", "custom"}
+
+
+def _post_with_retries(
+    url: str,
+    *,
+    headers: dict,
+    payload: dict,
+    timeout: float,
+    attempts: int = 3,
+) -> Optional[requests.Response]:
+    """POST with bounded retry/backoff for transient network and 5xx/429 responses."""
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            if resp.status_code in (429, 500, 502, 503, 504) and attempt < attempts:
+                time.sleep(0.35 * attempt)
+                continue
+            return resp
+        except requests.RequestException:
+            if attempt >= attempts:
+                return None
+            time.sleep(0.35 * attempt)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +75,11 @@ def _gemini_post(api_key: str, prompt: str, temperature: float, max_tokens: int)
         "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
     }
     try:
-        resp = requests.post(_GEMINI_URL, headers=headers, json=payload, timeout=15)
+        resp = _post_with_retries(_GEMINI_URL, headers=headers, payload=payload, timeout=15, attempts=3)
+        if resp is None:
+            import sys
+            print("[reminders] Gemini network failure after retries", file=sys.stderr)
+            return None
         if resp.status_code != 200:
             import sys
             print(f"[reminders] Gemini HTTP {resp.status_code}: {resp.text[:200]}", file=sys.stderr)
@@ -128,15 +157,33 @@ def parse_reminder(
     if not isinstance(parsed, dict) or "datetime_ist" not in parsed:
         return None
 
+    # Validate and normalize parsed fields before persisting.
+    dt_raw = str(parsed.get("datetime_ist", "")).strip()
+    if not dt_raw:
+        return None
+    try:
+        dt_obj = datetime.datetime.fromisoformat(dt_raw)
+    except Exception:
+        return None
+    if dt_obj.tzinfo is not None:
+        # Store timezone-naive ISO string in IST convention to match existing file format.
+        dt_obj = dt_obj.astimezone(_IST).replace(tzinfo=None)
+
+    occasion = str(parsed.get("occasion", "reminder")).strip()[:120] or "reminder"
+    occasion_type = str(parsed.get("occasion_type", "custom")).strip().lower()
+    if occasion_type not in _ALLOWED_OCCASION_TYPES:
+        occasion_type = "custom"
+    notes = str(parsed.get("notes", "")).strip()[:200]
+
     return {
         "id": str(uuid.uuid4()),
         "user_id": user_id,
         "user_name": user_name,
         "channel_id": channel_id,
-        "datetime_ist": parsed["datetime_ist"],
-        "occasion": str(parsed.get("occasion", "reminder"))[:120],
-        "occasion_type": str(parsed.get("occasion_type", "custom")),
-        "notes": str(parsed.get("notes", ""))[:200],
+        "datetime_ist": dt_obj.isoformat(timespec="seconds"),
+        "occasion": occasion,
+        "occasion_type": occasion_type,
+        "notes": notes,
         "done": False,
         "created_at": datetime.datetime.now(_IST).isoformat(),
     }
@@ -260,6 +307,22 @@ class ReminderStore:
                     r["done"] = True
                     break
             self._save()
+
+    def mark_done_if_pending(self, reminder_id: str) -> bool:
+        """Mark a reminder done only if it exists and is still pending.
+
+        Returns True when a pending reminder was marked done, False otherwise.
+        """
+        with _LOCK:
+            self._load()
+            for r in self._reminders:
+                if r.get("id") == reminder_id:
+                    if r.get("done"):
+                        return False
+                    r["done"] = True
+                    self._save()
+                    return True
+        return False
 
     def list_pending(self, user_id: int) -> list[dict]:
         """Return pending reminders for a user sorted by datetime_ist."""
