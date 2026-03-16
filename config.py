@@ -32,8 +32,6 @@ def _float_env(var_name: str, default: float) -> float:
 
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-GEN1_API_KEY = os.getenv("GEN1_API_KEY")
-GEN2_API_KEY = os.getenv("GEN2_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # System prompt — the full Ana character. Distilled from the complete 22-section profile.
@@ -401,12 +399,6 @@ MODEL_SETTINGS = {
 
 if not DISCORD_TOKEN:
     print("⚠️ Warning: Missing DISCORD_TOKEN in .env. Bot will not start.", file=sys.stderr)
-
-if not GEN1_API_KEY:
-    print("⚠️ Warning: Missing GEN1_API_KEY. Gemini Gen1 fallback will not work.", file=sys.stderr)
-
-if not GEN2_API_KEY:
-    print("⚠️ Warning: Missing GEN2_API_KEY. Gemini Gen2 fallback will not work.", file=sys.stderr)
 
 if not GROQ_API_KEY:
     print("⚠️ Warning: Missing GROQ_API_KEY. Groq-based responses may fail.", file=sys.stderr)

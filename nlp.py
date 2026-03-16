@@ -1,19 +1,16 @@
 import datetime
-import requests
 import json
 import random
 import re
-import time
-from typing import List, Optional
+from typing import Optional, List
 from groq import Groq, RateLimitError as GroqRateLimitError
 from config import (
-    GEN1_API_KEY, GEN2_API_KEY, GROQ_API_KEY, SYSTEM_PROMPT,
-    GROQ_MODEL_WATERFALL, MODEL_SETTINGS,
+    GROQ_API_KEY, SYSTEM_PROMPT, GROQ_MODEL_WATERFALL, MODEL_SETTINGS,
 )
 
 ROAST_PROMPT = (
-    "you are ana — anahita, 23, NRI malayali. real person. someone just insulted, mocked, or cussed at you."
-    " you do NOT let this slide — but you do not match volume. you match PRECISION."
+    SYSTEM_PROMPT
+    + " you do NOT let this slide — but you do not match volume. you match PRECISION."
     "\n\nCOMEBACK RULES:"
     " (1) Do not get louder — get more specific. the precise cut lands harder than yelling."
     " (2) Use their OWN words or insult against them — flip it, twist it, make them regret the choice."
@@ -84,10 +81,6 @@ FLIRT_PROMPT = (
     "\nwrite in ana's style: lowercase, fragmented, no formal punctuation."
     " output ONLY the reply text, nothing else."
 )
-
-# Models
-GEN1_MODEL = "gemini-1.5-flash-latest"
-GEN2_MODEL = "gemini-flash-latest"
 
 # Groq client (instantiated once, with an explicit network timeout)
 _groq_client: Optional[Groq] = Groq(api_key=GROQ_API_KEY, timeout=30.0) if GROQ_API_KEY else None
@@ -189,28 +182,6 @@ _RE_PAREN_ACTION = re.compile(
     re.IGNORECASE,
 )
 
-
-def _post_with_retries(
-    url: str,
-    *,
-    headers: dict,
-    payload: dict,
-    timeout: float,
-    attempts: int = 3,
-) -> Optional[requests.Response]:
-    """POST with bounded retry/backoff for transient network and 5xx/429 responses."""
-    for attempt in range(1, attempts + 1):
-        try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
-            if resp.status_code in (429, 500, 502, 503, 504) and attempt < attempts:
-                time.sleep(0.35 * attempt + random.uniform(0.0, 0.2))
-                continue
-            return resp
-        except requests.RequestException:
-            if attempt >= attempts:
-                return None
-            time.sleep(0.35 * attempt + random.uniform(0.0, 0.2))
-    return None
 
 # AI empathy / support-bot openers — only patterns that are unambiguously chatbot dialect.
 # Deliberately minimal: only standalone openers unlikely to appear mid-sentence in valid text.
@@ -347,8 +318,7 @@ FALLBACK_RESPONSES = [
 
 
 def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_name: Optional[str] = None, roast: bool = False, flirt: bool = False, user_profile: Optional[str] = None) -> Optional[str]:
-    """Unified entry point: Groq waterfall (Kimi K2 → Llama 3.3 70B → Llama 4 Scout → Qwen 3 32B),
-    then Gemini Gen1, then Gemini Gen2, then a hardcoded fallback.
+    """Unified entry point: Groq model waterfall with hardcoded final fallback.
 
     user_profile: compact profile note from ProfileStore.format_for_context() — injected
     into the system prompt so Ana can reference what she already knows about this user.
@@ -371,22 +341,6 @@ def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_nam
             return reply
     except Exception as e:
         print(f"Groq waterfall failed unexpectedly: {e}")
-
-    # Fallback to GEN1 (backup)
-    try:
-        reply = call_gemini(GEN1_MODEL, GEN1_API_KEY, clean_text, history=history, author_name=author_name, roast=roast, flirt=flirt, label="Gen1", user_profile=user_profile)
-        if reply:
-            return reply
-    except Exception as e:
-        print(f"Gen1 backup failed: {e}")
-
-    # Final fallback to GEN2 (backup2)
-    try:
-        reply = call_gemini(GEN2_MODEL, GEN2_API_KEY, clean_text, history=history, author_name=author_name, roast=roast, flirt=flirt, label="Gen2", user_profile=user_profile)
-        if reply:
-            return reply
-    except Exception as e:
-        print(f"Gen2 backup2 failed: {e}")
 
     # If everything fails, return a random fallback
     return random.choice(FALLBACK_RESPONSES)
@@ -439,6 +393,7 @@ def _call_single_groq_model(
     author_name: Optional[str],
     roast: bool,
     flirt: bool,
+    context_layer: Optional[str] = None,
     user_profile: Optional[str] = None,
 ) -> Optional[str]:
     """Call one specific Groq model and return the reply, or None if empty.
@@ -466,7 +421,7 @@ def _call_single_groq_model(
         patch = settings.get("patch")
         if patch:
             base_prompt = base_prompt + "\n\n" + patch
-        base_prompt += "\n\n" + _build_context_layer()
+        base_prompt += "\n\n" + (context_layer or _build_context_layer())
 
     if author_name:
         base_prompt += (
@@ -548,10 +503,11 @@ def call_groq(
     """
     if _groq_client is None:
         return None
+    context_layer = None if (roast or flirt) else _build_context_layer()
     for model_id in GROQ_MODEL_WATERFALL:
         try:
             reply = _call_single_groq_model(
-                model_id, input_text, history, author_name, roast, flirt, user_profile
+                model_id, input_text, history, author_name, roast, flirt, context_layer, user_profile
             )
             if reply:
                 return reply
@@ -559,91 +515,6 @@ def call_groq(
             print(f"Groq rate limit on {model_id!r} — trying next model")
         except Exception as e:
             print(f"Groq {model_id!r} failed: {e}")
-    return None
-
-
-def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Optional[List[dict]] = None, author_name: Optional[str] = None, roast: bool = False, flirt: bool = False, label: str = "Gemini", user_profile: Optional[str] = None) -> Optional[str]:
-    """Call a Gemini model via the Google Generative Language API.
-
-    Used for both Gen1 and Gen2 fallbacks.
-    """
-    if not api_key:
-        return None
-    truncated = input_text[:1000]
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    headers = {
-        "Content-Type": "application/json",
-        "X-goog-api-key": api_key,
-    }
-    prompt = ROAST_PROMPT if roast else (FLIRT_PROMPT if flirt else SYSTEM_PROMPT)
-    if not roast and not flirt:
-        prompt += "\n\n" + _build_context_layer()
-        prompt += (
-            "\n\n[group chat: multiple users are active in this server."
-            " messages in history show who sent them via a [Name]: prefix."
-            " reply to the current user, but you have memory of who said what before.]"
-        )
-    if author_name:
-        prompt += f" [btw the person messaging you is called {author_name}. use their name naturally if it fits — don't force it, don't do it every message.]"
-    # Inject stored profile note — only for normal/flirt, not roast
-    if user_profile and not roast:
-        prompt += f"\n\n{user_profile}"
-    contents = []
-    if history:
-        # Gemini requires contents to start with a "user" turn — skip any leading
-        # "assistant" entries that can appear when the history deque rotates.
-        start = next((i for i, e in enumerate(history) if e["role"] == "user"), len(history))
-        for msg in history[start:]:
-            role = "model" if msg["role"] == "assistant" else "user"
-            content_text = msg["content"]
-            if role == "user":
-                display = msg.get("author") or msg.get("name")
-                if display:
-                    content_text = f"[{display}]: {content_text}"
-            contents.append({"role": role, "parts": [{"text": content_text}]})
-    current_text = truncated
-    if author_name:
-        current_text = f"[{author_name}]: {current_text}"
-    contents.append({"role": "user", "parts": [{"text": current_text}]})
-    data = {
-        "contents": contents,
-        "generationConfig": {
-            "temperature": 1.4 if roast else (1.15 if flirt else 0.95),
-            "maxOutputTokens": 100,
-        },
-        "systemInstruction": {
-            "parts": [{"text": prompt}]
-        },
-    }
-
-    response = _post_with_retries(
-        api_url,
-        headers=headers,
-        payload=data,
-        timeout=30,
-        attempts=3,
-    )
-    if response is None:
-        print(f"{label} request error: network failure after retries")
-        return None
-
-    if response.status_code != 200:
-        print(f"{label} Error: {response.status_code}")
-        print(response.text[:300])
-        return None
-
-    try:
-        result = response.json()
-        candidates = result.get("candidates", [])
-        if candidates and "content" in candidates[0]:
-            for part in candidates[0]["content"].get("parts", []):
-                if "text" in part:
-                    full_response = part["text"]
-                    print(f"\n{label} Output:\n{full_response[:200]}")
-                    return normalize_response(full_response)
-    except Exception as e:
-        print(f"Error parsing {label} response: {e}")
-
     return None
 
 

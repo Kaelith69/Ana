@@ -19,14 +19,14 @@ import json
 import os
 import re
 import threading
-import time
 from typing import Optional
 
-import requests
+from groq import Groq
+from config import GROQ_API_KEY, GROQ_MODEL_WATERFALL
 
 _PROFILES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "profiles")
 _LOCK = threading.Lock()
-_EXTRACTION_MODEL = "gemini-flash-latest"
+_groq_client: Groq | None = Groq(api_key=GROQ_API_KEY, timeout=20.0) if GROQ_API_KEY else None
 
 _EXTRACTION_PROMPT = (
     "You are a personal-detail extractor for a Discord chatbot.\n"
@@ -49,29 +49,6 @@ _EXTRACTION_PROMPT = (
     "  - Output ONLY valid JSON — no explanation, no markdown code fences.\n\n"
     "Message:\n"
 )
-
-
-def _post_with_retries(
-    url: str,
-    *,
-    headers: dict,
-    payload: dict,
-    timeout: float,
-    attempts: int = 3,
-) -> Optional[requests.Response]:
-    """POST with bounded retry/backoff for transient network and 5xx/429 responses."""
-    for attempt in range(1, attempts + 1):
-        try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
-            if resp.status_code in (429, 500, 502, 503, 504) and attempt < attempts:
-                time.sleep(0.3 * attempt)
-                continue
-            return resp
-        except requests.RequestException:
-            if attempt >= attempts:
-                return None
-            time.sleep(0.3 * attempt)
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -285,56 +262,34 @@ class ProfileStore:
         name = _sanitize_for_prompt(profile.get("_name", "them"))
         return f"[what you know about {name}: {' · '.join(parts)}]"
 
-def extract_profile_info(text: str, api_key: Optional[str]) -> dict:
-    """Use Gemini to extract personal details a user revealed in their message.
+def extract_profile_info(text: str) -> dict:
+    """Use Groq to extract personal details a user revealed in their message.
 
     Returns a dict of extracted fields, or {} if nothing personal was found or on any error.
     Best-effort only — all failures are completely silent.
     """
-    if not api_key or not text:
+    if _groq_client is None or not text:
         return {}
     stripped = text.strip()
     # Skip very short bursts that can't plausibly contain personal details
     if len(stripped) < 15:
         return {}
 
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{_EXTRACTION_MODEL}:generateContent"
-    )
-    headers = {
-        "Content-Type": "application/json",
-        "X-goog-api-key": api_key,
-    }
-    payload = {
-        "contents": [
-            {"role": "user", "parts": [{"text": _EXTRACTION_PROMPT + stripped[:800]}]}
-        ],
-        "generationConfig": {
-            "temperature": 0.1,       # low — we want factual extraction, not creativity
-            "maxOutputTokens": 300,
-        },
-    }
-
     try:
-        resp = _post_with_retries(url, headers=headers, payload=payload, timeout=15, attempts=3)
-        if resp is None:
-            import sys
-            print("[profile] Gemini extraction network failure after retries", file=sys.stderr)
+        completion = _groq_client.chat.completions.create(
+            model=GROQ_MODEL_WATERFALL[0],
+            messages=[
+                {"role": "system", "content": "You are a personal-detail extractor. Output only valid JSON as instructed."},
+                {"role": "user", "content": _EXTRACTION_PROMPT + stripped[:800]},
+            ],
+            max_completion_tokens=300,
+            temperature=0.1,
+            top_p=0.95,
+            stream=False,
+        )
+        if not completion.choices:
             return {}
-        if resp.status_code != 200:
-            import sys
-            print(f"[profile] Gemini extraction HTTP {resp.status_code}: {resp.text[:200]}", file=sys.stderr)
-            return {}
-        result = resp.json()
-        candidates = result.get("candidates", [])
-        if not candidates:
-            return {}
-        raw = ""
-        for part in candidates[0].get("content", {}).get("parts", []):
-            if "text" in part:
-                raw = part["text"].strip()
-                break
+        raw = (completion.choices[0].message.content or "").strip()
         if not raw or raw == "{}":
             return {}
         # Strip markdown fences in case the model wraps its JSON.

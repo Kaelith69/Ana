@@ -7,7 +7,7 @@ import sys
 from collections import defaultdict, deque
 import discord
 from discord.ext import commands, tasks
-from config import DISCORD_TOKEN, JOKE_SETTINGS, TRIGGER_WORDS, ROAST_WORDS, FLIRT_WORDS, GEN2_API_KEY
+from config import DISCORD_TOKEN, JOKE_SETTINGS, TRIGGER_WORDS, ROAST_WORDS, FLIRT_WORDS
 from jokes import DadJokeService
 from keepalive import start_keepalive
 from nlp import process_with_nlp, _api_safe_name, FALLBACK_RESPONSES
@@ -252,8 +252,95 @@ _FOLLOWUPS = [
     "ok i've moved on already",
 ]
 
+# Short fallback replies used when throttling or generation fails.
+_BUSY_ACKS = [
+    "one sec i'm catching up",
+    "wait i'm here",
+    "hold on, processing that",
+    "i got u, give me a sec",
+    "yeah i saw that",
+    "here. i'm listening",
+]
+
 
 _IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+_SANITIZE_RE = re.compile(r'[\r\n\t\[\]"\\]')
+
+
+def _sanitize_name(name: str, *, default: str = "user", limit: int = 50) -> str:
+    """Sanitize display names before logging/prompt injection and cap length."""
+    cleaned = _SANITIZE_RE.sub(' ', name).strip()[:limit]
+    return cleaned or default
+
+
+def _mark_reply_time(uid: int, cid: int, ts: float | None = None) -> None:
+    """Update per-user and per-channel cooldown clocks with a single timestamp."""
+    when = ts if ts is not None else asyncio.get_running_loop().time()
+    _user_last_reply[uid] = when
+    _channel_last_reply[cid] = when
+
+
+def _restore_reply_time(
+    uid: int,
+    cid: int,
+    prev_user_ts: float | None,
+    prev_channel_ts: float | None,
+) -> None:
+    """Restore prior cooldown state when pre-reserved slots were never used."""
+    if prev_user_ts is None:
+        _user_last_reply.pop(uid, None)
+    else:
+        _user_last_reply[uid] = prev_user_ts
+
+    if prev_channel_ts is None:
+        _channel_last_reply.pop(cid, None)
+    else:
+        _channel_last_reply[cid] = prev_channel_ts
+
+
+def _fallback_reply() -> str:
+    """Centralized fallback reply selection used on generation/send failures."""
+    return random.choice(FALLBACK_RESPONSES)
+
+
+async def _build_reply_context(
+    message: discord.Message,
+    resolved_content: str,
+    ref_msg: discord.Message | None = None,
+) -> str:
+    """Attach a compact referenced-message snippet when this is a Discord reply."""
+    if not message.reference:
+        return resolved_content
+
+    if ref_msg is None:
+        ref_msg = await _get_referenced_message(message)
+
+    if not ref_msg:
+        return resolved_content
+
+    ref_author = _sanitize_name(ref_msg.author.display_name)
+    ref_raw = _resolve_mentions((ref_msg.content or "")[:200], ref_msg)
+    ref_text = _SANITIZE_RE.sub(' ', ref_raw).strip()[:200]
+    if not ref_text:
+        return resolved_content
+    return f"[replying to @{ref_author}: \"{ref_text}\"]\n{resolved_content}"
+
+
+async def _get_referenced_message(message: discord.Message) -> discord.Message | None:
+    """Resolve the referenced message, fetching from API when it's not cached."""
+    if not message.reference:
+        return None
+    if isinstance(message.reference.resolved, discord.Message):
+        return message.reference.resolved
+    if not message.reference.message_id:
+        return None
+    try:
+        return await message.channel.fetch_message(message.reference.message_id)
+    except (discord.NotFound, discord.HTTPException, OSError):
+        return None
+    except Exception as e:
+        print(f"[reply-ref] unexpected fetch error in channel={message.channel.id}: {e}", file=sys.stderr)
+        return None
 
 
 def _resolve_mentions(content: str, message: discord.Message) -> str:
@@ -325,16 +412,37 @@ def _split_reply(text: str) -> list[str]:
             return [p for p in [text[:cut].strip(), text[cut:].strip()] if p]
     return [text]
 
+
+async def _send_with_fallback(message: discord.Message, text: str, prefer_reply: bool) -> bool:
+    """Best-effort message delivery with retry and channel-send fallback.
+
+    Returns True if any send path succeeds, else False.
+    """
+    mode_reply = prefer_reply
+    for attempt in range(1, 4):
+        try:
+            if mode_reply:
+                await message.reply(text, mention_author=False)
+            else:
+                await message.channel.send(text)
+            return True
+        except (discord.HTTPException, OSError) as e:
+            print(
+                f"[send] attempt={attempt} reply_mode={mode_reply} channel={message.channel.id} error={e}",
+                file=sys.stderr,
+            )
+            # If reply path fails, fallback to plain channel send on next attempt.
+            mode_reply = False
+            await asyncio.sleep(0.25 * attempt)
+    return False
+
 async def _update_profile_bg(user_id: int, display_name: str, text: str) -> None:
     """Background task: extract personal details from a message and update the profile store.
 
     Runs via asyncio.create_task after Ana's reply is sent — never delays the response.
     """
     try:
-        if not GEN2_API_KEY:
-            print(f"[profile] skipped for {display_name!r}: GEN2_API_KEY not set", file=sys.stderr)
-            return
-        extracted = await asyncio.to_thread(extract_profile_info, text, GEN2_API_KEY)
+        extracted = await asyncio.to_thread(extract_profile_info, text)
         if extracted:
             await asyncio.to_thread(profile_store.update, user_id, display_name, extracted)
             print(f"[profile] updated {display_name!r}: {list(extracted.keys())}", file=sys.stderr)
@@ -402,7 +510,6 @@ async def remindme(ctx, *, text: str = ""):
             ctx.author.id,
             ctx.author.display_name,
             ctx.channel.id,
-            GEN2_API_KEY,
         )
     if not reminder:
         await ctx.send("couldn't parse that. try: `!remindme march 15 10am john's birthday`")
@@ -500,21 +607,35 @@ async def _check_reminders() -> None:
     """Fire due reminders every minute with AI-generated wish/reminder messages."""
     now_ist = datetime.datetime.now(_IST)
     due = await asyncio.to_thread(reminder_store.get_due, now_ist)
+    channel_cache: dict[int, discord.abc.Messageable | None] = {}
+    mention_cache: dict[int, str] = {}
     for reminder in due:
-        channel = bot.get_channel(reminder["channel_id"])
-        if not isinstance(channel, discord.abc.Messageable):
+        channel_id = reminder["channel_id"]
+        channel = channel_cache.get(channel_id)
+        if channel is None and channel_id not in channel_cache:
+            candidate = bot.get_channel(channel_id)
+            channel = candidate if isinstance(candidate, discord.abc.Messageable) else None
+            channel_cache[channel_id] = channel
+
+        if channel is None:
             continue
-        msg = await asyncio.to_thread(generate_wish, reminder, GEN2_API_KEY)
+
+        msg = await asyncio.to_thread(generate_wish, reminder)
         if not msg:
             msg = f"hey — reminder: {reminder['occasion']}"
         try:
-            user = bot.get_user(reminder["user_id"])
-            if user is None:
-                try:
-                    user = await bot.fetch_user(reminder["user_id"])
-                except (discord.HTTPException, OSError):
-                    user = None
-            mention = user.mention if user else f"@{reminder['user_name']}"
+            user_id = reminder["user_id"]
+            mention = mention_cache.get(user_id)
+            if mention is None:
+                user = bot.get_user(user_id)
+                if user is None:
+                    try:
+                        user = await bot.fetch_user(user_id)
+                    except (discord.HTTPException, OSError):
+                        user = None
+                mention = user.mention if user else f"@{reminder['user_name']}"
+                mention_cache[user_id] = mention
+
             await channel.send(f"{mention} {msg}")
             # Mark done only after a successful send so reminders are never dropped.
             await asyncio.to_thread(reminder_store.mark_done_if_pending, reminder["id"])
@@ -540,218 +661,140 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    content = (message.content or "").lower()
+    raw_content = message.content or ""
     mentioned = bot.user in message.mentions
-    # Roast/flirt words should independently trigger Ana, not just change her mode
-    is_trigger = (mentioned
-                  or bool(TRIGGER_PATTERN.search(content))
-                  or bool(ROAST_PATTERN.search(content))
-                  or bool(FLIRT_PATTERN.search(content)))
-    
-    if is_trigger:
-        now = asyncio.get_running_loop().time()
-        uid = message.author.id
-        cid = message.channel.id
+    now = asyncio.get_running_loop().time()
+    uid = message.author.id
+    cid = message.channel.id
 
-        # Strip punctuation to extract clean words for the low-signal subset check
-        clean_content = re.sub(r'[^\w\s]', '', content)
-        words = set(clean_content.split())
+    is_roast = bool(ROAST_PATTERN.search(raw_content))
+    is_flirt = not is_roast and bool(FLIRT_PATTERN.search(raw_content))
+    is_trigger = bool(TRIGGER_PATTERN.search(raw_content))
 
-        # Detect roast/flirt early — roasts bypass all cooldowns and skip-chances
-        is_roast = bool(ROAST_PATTERN.search(content))
-        is_flirt = not is_roast and bool(FLIRT_PATTERN.search(content))
+    # Only engage if @mentioned, trigger/roast/flirt word is present,
+    # or this message is a Discord reply specifically to one of Ana's own messages.
+    ref_msg = await _get_referenced_message(message)
+    is_reply_to_ana = bool(ref_msg and bot.user and ref_msg.author.id == bot.user.id)
+    if not (mentioned or is_trigger or is_roast or is_flirt or is_reply_to_ana):
+        return
 
-        # Compute these early — needed by both the extraction task below and the NLP path.
-        author_name = re.sub(r'[\r\n\t\[\]"\\]', ' ', message.author.display_name).strip()[:50] or "user"
-        resolved_content = _resolve_mentions(message.content or "", message)
+    author_name = _sanitize_name(message.author.display_name)
+    resolved_content = _resolve_mentions(raw_content, message)
 
-        # Schedule background profile extraction for ALL triggered messages — not just text
-        # replies. extract_profile_info silently skips short/empty content (<15 chars).
-        # Placing this before the return branches ensures personal info is never lost just
-        # because Ana chose to react, ghost-type, or was within a cooldown window.
-        _bg_task = asyncio.create_task(_update_profile_bg(uid, author_name, resolved_content))
-        _bg_tasks.add(_bg_task)
-        _bg_task.add_done_callback(_bg_tasks.discard)
+    # Always schedule extraction so every user message can contribute profile context.
+    _bg_task = asyncio.create_task(_update_profile_bg(uid, author_name, resolved_content))
+    _bg_tasks.add(_bg_task)
+    _bg_task.add_done_callback(_bg_tasks.discard)
 
-        # Silently skip ~20% of the time on low-signal words (never skip a roast)
-        is_low_signal = not mentioned and bool(words) and words.issubset(_LOW_SIGNAL)
-        if is_low_signal and not is_roast and random.random() < 0.20:
-            return
+    # Throttle bursts, but never drop a message: return a short acknowledgement.
+    _user_cooldown = MENTION_USER_COOLDOWN if mentioned else USER_COOLDOWN
+    if not is_roast and (
+        now - _channel_last_reply.get(cid, 0) < CHANNEL_COOLDOWN
+        or now - _user_last_reply.get(uid, 0) < _user_cooldown
+    ):
+        ack = random.choice(_BUSY_ACKS)
+        sent = await _send_with_fallback(message, ack, prefer_reply=mentioned or bool(message.reference))
+        if sent:
+            _mark_reply_time(uid, cid)
+        return
 
-        # Channel cooldown — don't pile on if she just replied here (roasts always go through)
-        if not is_roast and now - _channel_last_reply.get(cid, 0) < CHANNEL_COOLDOWN:
-            return
+    # Reserve cooldown slots before long-running NLP work to prevent fan-out races.
+    prev_user_ts = _user_last_reply.get(uid)
+    prev_channel_ts = _channel_last_reply.get(cid)
+    _pre_reserve = asyncio.get_running_loop().time()
+    _mark_reply_time(uid, cid, _pre_reserve)
 
-        # Per-user cooldown — mentions use a shorter throttle; roasts always bypass.
-        _user_cooldown = MENTION_USER_COOLDOWN if mentioned else USER_COOLDOWN
-        if not is_roast and now - _user_last_reply.get(uid, 0) < _user_cooldown:
-            await asyncio.sleep(random.uniform(0.5, 2.5))  # humans don't react instantly
+    user_profile_context = await asyncio.to_thread(profile_store.format_for_context, uid)
+
+    text_to_process = await _build_reply_context(message, resolved_content, ref_msg=ref_msg)
+
+    history = list(_history.get(cid, []))
+    read_delay = random.uniform(0.2, 0.7) if is_roast else random.uniform(0.4, 1.0) + min(len(resolved_content) * 0.003, 1.2)
+
+    sent_any = False
+    try:
+        await asyncio.sleep(read_delay)
+
+        async with message.channel.typing():
             try:
-                await message.add_reaction(_pick_reaction(content, is_flirt))
-            except (discord.HTTPException, OSError):
-                pass
-            return
+                async with _nlp_semaphore:
+                    reply = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            process_with_nlp,
+                            text_to_process, history, author_name, is_roast, is_flirt,
+                            user_profile_context,
+                        ),
+                        timeout=90.0,
+                    )
+            except asyncio.TimeoutError:
+                print(f"[nlp] all APIs timed out after 90s for uid={uid} — using fallback", file=sys.stderr)
+                reply = _fallback_reply()
+            except Exception as e:
+                print(f"[nlp] generation error for uid={uid}: {e}", file=sys.stderr)
+                reply = _fallback_reply()
 
-        # ~12% chance to just react instead of replying (never on roasts — she always fires back)
-        if not is_roast and random.random() < 0.12:
-            try:
-                await message.add_reaction(_pick_reaction(content, is_flirt))
-            except (discord.HTTPException, OSError):
-                pass
-            _channel_last_reply[cid] = now
-            return
+            if not reply or not str(reply).strip():
+                reply = _fallback_reply()
 
-        # ~6% chance of ghost typing — she starts typing then goes quiet
-        # very human: read it, thought about it, decided not to engage
-        if not is_roast and random.random() < 0.06:
-            try:
+            length = len(reply)
+            if is_roast:
+                extra = random.uniform(0.4, 1.1)
+            elif length < 60:
+                extra = random.uniform(0.7, 1.5)
+            elif length < 180:
+                extra = random.uniform(1.2, 2.6)
+            else:
+                extra = random.uniform(2.0, 3.6)
+            await asyncio.sleep(extra)
+
+        _history[cid].append({
+            "role": "user",
+            "content": text_to_process,
+            "name": _api_safe_name(author_name),
+            "author": author_name,
+        })
+        _history[cid].append({"role": "assistant", "content": reply})
+
+        _mark_reply_time(uid, cid)
+
+        parts = _split_reply(reply)
+        first_part, correction = _maybe_typo(parts[0]) if not is_roast else (parts[0], None)
+        use_reply = mentioned or bool(message.reference) or (random.random() < 0.65)
+
+        sent_any = await _send_with_fallback(message, first_part, prefer_reply=use_reply)
+
+        if sent_any and correction and random.random() < 0.70:
+            await asyncio.sleep(random.uniform(1.2, 2.4))
+            await _send_with_fallback(message, correction, prefer_reply=False)
+
+        if sent_any:
+            for part in parts[1:]:
+                await asyncio.sleep(random.uniform(0.5, 1.0))
                 async with message.channel.typing():
-                    await asyncio.sleep(random.uniform(1.5, 4.0))
-            except (discord.HTTPException, OSError):
-                pass
-            _channel_last_reply[cid] = now
-            return
+                    await asyncio.sleep(random.uniform(0.3, 0.7) + len(part) * 0.014)
+                await _send_with_fallback(message, part, prefer_reply=False)
 
-        # ~10% chance to also react on top of reply (skip for roasts — no softening)
-        if not is_roast and random.random() < 0.10:
-            try:
-                await message.add_reaction(_pick_reaction(content, is_flirt))
-            except (discord.HTTPException, OSError):
-                pass
+            if is_roast and random.random() < 0.20:
+                await asyncio.sleep(random.uniform(2.2, 4.0))
+                await _send_with_fallback(message, random.choice(_ROAST_FOLLOWUPS), prefer_reply=False)
+            elif is_flirt and random.random() < 0.16:
+                await asyncio.sleep(random.uniform(2.5, 5.0))
+                await _send_with_fallback(message, random.choice(_FLIRT_FOLLOWUPS), prefer_reply=False)
+            elif not is_roast and not is_flirt and random.random() < 0.06:
+                await asyncio.sleep(random.uniform(3.0, 6.0))
+                await _send_with_fallback(message, random.choice(_FOLLOWUPS), prefer_reply=False)
 
-        # Claim cooldown slots NOW — before any await that leads to the NLP call.
-        # Without this, concurrent on_message handlers for rapid messages in the same
-        # channel all see stale timestamps, all pass the cooldown check, all start NLP
-        # calls (~console output appears), then all fire send() at once, Discord
-        # rate-limits the burst and the excess replies are silently swallowed.
-        # The late update below overwrites these with the accurate send timestamp.
-        _pre_reserve = asyncio.get_running_loop().time()
-        _channel_last_reply[cid] = _pre_reserve
-        _user_last_reply[uid] = _pre_reserve
+    except Exception as _msg_err:
+        print(f"[on_message] unexpected error (uid={uid}, channel={cid}): {_msg_err}", file=sys.stderr)
 
-        # Load any profile data we already have for this user — passed to NLP for context
-        user_profile_context = await asyncio.to_thread(profile_store.format_for_context, uid)
-
-        # If this message is a Discord reply, inject the referenced message as context so
-        # Ana knows who is being addressed / talked about — fixes group-chat confusion
-        text_to_process = resolved_content
-        if message.reference:
-            ref_msg = None
-            if isinstance(message.reference.resolved, discord.Message):
-                ref_msg = message.reference.resolved
-            elif message.reference.message_id:
-                # Reference not yet in cache — fetch it (graceful fallback)
-                try:
-                    ref_msg = await message.channel.fetch_message(message.reference.message_id)
-                except (discord.NotFound, discord.HTTPException):
-                    pass
-            if ref_msg:
-                # Sanitize ref fields — prevent prompt injection from crafted content or display names
-                ref_author = re.sub(r'[\r\n\t\[\]"\\]', ' ', ref_msg.author.display_name).strip()[:50]
-                ref_raw = _resolve_mentions((ref_msg.content or "")[:200], ref_msg)
-                ref_text = re.sub(r'[\r\n\t\[\]"\\]', ' ', ref_raw).strip()[:200]
-                if ref_text:
-                    text_to_process = (
-                        f"[replying to @{ref_author}: \"{ref_text}\"]\n{resolved_content}"
-                    )
-
-        # Use .get() to avoid creating a spurious empty deque in the defaultdict
-        # for channels where Ana has never replied — prevents unbounded memory growth.
-        history = list(_history.get(cid, []))
-
-        # Simulate reading the message before typing — humans don't react at network speed.
-        # Proportional to message length; roasts fire back faster (she's already mad).
-        if is_roast:
-            read_delay = random.uniform(0.2, 0.7)
+    # Final guarantee: try to send at least one fallback response for every user message.
+    if not sent_any:
+        fallback = _fallback_reply()
+        sent_any = await _send_with_fallback(message, fallback, prefer_reply=mentioned or bool(message.reference))
+        if sent_any:
+            _mark_reply_time(uid, cid)
         else:
-            read_delay = random.uniform(0.5, 1.2) + min(len(resolved_content) * 0.004, 1.8)
-        try:
-            await asyncio.sleep(read_delay)
-
-            async with message.channel.typing():
-                try:
-                    async with _nlp_semaphore:
-                        reply = await asyncio.wait_for(
-                            asyncio.to_thread(
-                                process_with_nlp,
-                                text_to_process, history, author_name, is_roast, is_flirt,
-                                user_profile_context,
-                            ),
-                            timeout=90.0,
-                        )
-                except asyncio.TimeoutError:
-                    print(
-                        f"[nlp] all APIs timed out after 90s for uid={uid} — using fallback",
-                        file=sys.stderr,
-                    )
-                    reply = random.choice(FALLBACK_RESPONSES)
-                # Roasts: fast angry typing (0.4-1.2s). Others: proportional to reply length.
-                if is_roast:
-                    extra = random.uniform(0.4, 1.2)
-                elif reply:
-                    length = len(reply)
-                    if length < 60:
-                        extra = random.uniform(0.8, 1.8)
-                    elif length < 180:
-                        extra = random.uniform(1.8, 3.5)
-                    else:
-                        extra = random.uniform(3.0, 5.0)
-                else:
-                    extra = random.uniform(0.5, 1.5)
-                await asyncio.sleep(extra)
-            if reply:
-                _history[cid].append({
-                    "role": "user",
-                    "content": text_to_process,
-                    "name": _api_safe_name(author_name),
-                    "author": author_name,
-                })
-                _history[cid].append({"role": "assistant", "content": reply})
-                # Use the actual current time so the cooldown reflects when the reply
-                # was really sent, not the stale handler-start timestamp in `now`.
-                _sent_at = asyncio.get_running_loop().time()
-                _user_last_reply[uid] = _sent_at
-                _channel_last_reply[cid] = _sent_at
-                parts = _split_reply(reply)
-                # Typo+correction only on non-roast replies (she's not typo-ing when she's mad)
-                first_part, correction = _maybe_typo(parts[0]) if not is_roast else (parts[0], None)
-                # When mentioned, always reply-thread. Otherwise ~65% reply, ~35% just send into channel.
-                use_reply = mentioned or (random.random() < 0.65)
-                if use_reply:
-                    await message.reply(first_part, mention_author=False)
-                else:
-                    await message.channel.send(first_part)
-                if correction and random.random() < 0.70:  # humans don't always catch their own typos
-                    await asyncio.sleep(random.uniform(1.5, 3.0))
-                    await message.channel.send(correction)
-                for part in parts[1:]:
-                    await asyncio.sleep(random.uniform(0.6, 1.2))
-                    async with message.channel.typing():
-                        await asyncio.sleep(random.uniform(0.4, 0.8) + len(part) * 0.018)
-                    await message.channel.send(part)
-                # Roasts: 25% chance of sharp follow-up; flirts: 20% chance of flustered follow-up; others: 8%
-                if is_roast and random.random() < 0.25:
-                    await asyncio.sleep(random.uniform(2.5, 5.0))
-                    async with message.channel.typing():
-                        await asyncio.sleep(random.uniform(0.4, 1.0))
-                    await message.channel.send(random.choice(_ROAST_FOLLOWUPS))
-                elif is_flirt and random.random() < 0.20:
-                    await asyncio.sleep(random.uniform(3.0, 6.0))
-                    async with message.channel.typing():
-                        await asyncio.sleep(random.uniform(0.5, 1.2))
-                    await message.channel.send(random.choice(_FLIRT_FOLLOWUPS))
-                elif not is_roast and not is_flirt and random.random() < 0.08:
-                    await asyncio.sleep(random.uniform(4.0, 8.0))
-                    async with message.channel.typing():
-                        await asyncio.sleep(random.uniform(0.5, 1.5))
-                    await message.channel.send(random.choice(_FOLLOWUPS))
-        except (discord.HTTPException, OSError) as _msg_err:
-            print(f"[on_message] Discord/OS error (uid={uid}): {_msg_err}", file=sys.stderr)
-    else:
-        try:
-            await joke_service.maybe_send_joke(message.channel)
-        except (discord.HTTPException, OSError) as _joke_err:
-            print(f"[joke] send failed in channel={message.channel.id}: {_joke_err}", file=sys.stderr)
+            _restore_reply_time(uid, cid, prev_user_ts, prev_channel_ts)
 
 @bot.event
 async def on_command_error(ctx, error):

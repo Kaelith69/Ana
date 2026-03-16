@@ -1,7 +1,7 @@
 """Reminder system for Ana.
 
 Users set reminders with: !remindme <natural language>
-Gemini parses the input into structured JSON and stores it in data/reminders/reminders.json.
+Groq parses the input into structured JSON and stores it in data/reminders/reminders.json.
 A background task polls every minute and fires AI-generated wish/reminder messages.
 
 Each reminder record:
@@ -23,76 +23,47 @@ import json
 import os
 import re
 import threading
-import time
 import uuid
 from typing import Optional
 
-import requests
+from groq import Groq
+from config import GROQ_API_KEY, GROQ_MODEL_WATERFALL
 
 _REMINDERS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "reminders")
 _REMINDERS_FILE = os.path.join(_REMINDERS_DIR, "reminders.json")
 _LOCK = threading.Lock()
 _IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-_GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-flash-latest:generateContent"
-)
 _ALLOWED_OCCASION_TYPES = {"birthday", "anniversary", "wedding", "exam", "meeting", "custom"}
 
-
-def _post_with_retries(
-    url: str,
-    *,
-    headers: dict,
-    payload: dict,
-    timeout: float,
-    attempts: int = 3,
-) -> Optional[requests.Response]:
-    """POST with bounded retry/backoff for transient network and 5xx/429 responses."""
-    for attempt in range(1, attempts + 1):
-        try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
-            if resp.status_code in (429, 500, 502, 503, 504) and attempt < attempts:
-                time.sleep(0.35 * attempt)
-                continue
-            return resp
-        except requests.RequestException:
-            if attempt >= attempts:
-                return None
-            time.sleep(0.35 * attempt)
-    return None
+_groq_client: Groq | None = Groq(api_key=GROQ_API_KEY, timeout=25.0) if GROQ_API_KEY else None
 
 
 # ---------------------------------------------------------------------------
-# Gemini helper
+# Groq helper
 # ---------------------------------------------------------------------------
 
-def _gemini_post(api_key: str, prompt: str, temperature: float, max_tokens: int) -> Optional[str]:
-    """Single reusable Gemini POST. Returns the first text part, or None on any failure."""
-    headers = {"Content-Type": "application/json", "X-goog-api-key": api_key}
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
-    }
+def _groq_complete(system_prompt: str, user_prompt: str, temperature: float, max_tokens: int) -> Optional[str]:
+    """Single reusable Groq completion for reminder parsing and wish generation."""
+    if _groq_client is None:
+        return None
     try:
-        resp = _post_with_retries(_GEMINI_URL, headers=headers, payload=payload, timeout=15, attempts=3)
-        if resp is None:
-            import sys
-            print("[reminders] Gemini network failure after retries", file=sys.stderr)
+        completion = _groq_client.chat.completions.create(
+            model=GROQ_MODEL_WATERFALL[0],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_completion_tokens=max_tokens,
+            temperature=temperature,
+            top_p=0.95,
+            stream=False,
+        )
+        if not completion.choices:
             return None
-        if resp.status_code != 200:
-            import sys
-            print(f"[reminders] Gemini HTTP {resp.status_code}: {resp.text[:200]}", file=sys.stderr)
-            return None
-        candidates = resp.json().get("candidates", [])
-        if not candidates:
-            return None
-        for part in candidates[0].get("content", {}).get("parts", []):
-            if "text" in part:
-                return part["text"].strip()
+        return (completion.choices[0].message.content or "").strip() or None
     except Exception as e:
         import sys
-        print(f"[reminders] Gemini error: {e}", file=sys.stderr)
+        print(f"[reminders] Groq error: {e}", file=sys.stderr)
     return None
 
 
@@ -125,19 +96,23 @@ def parse_reminder(
     user_id: int,
     user_name: str,
     channel_id: int,
-    api_key: str,
 ) -> Optional[dict]:
-    """Call Gemini to parse a free-form reminder request into a structured dict.
+    """Call Groq to parse a free-form reminder request into a structured dict.
 
     Returns a complete reminder record ready to be stored, or None if parsing fails.
     """
-    if not api_key or not raw_text.strip():
+    if _groq_client is None or not raw_text.strip():
         return None
 
     now_str = datetime.datetime.now(_IST).strftime("%Y-%m-%d %H:%M IST (%A)")
-    prompt = _parse_prompt(now_str) + raw_text.strip()[:600]
+    user_prompt = _parse_prompt(now_str) + raw_text.strip()[:600]
 
-    raw = _gemini_post(api_key, prompt, temperature=0.1, max_tokens=200)
+    raw = _groq_complete(
+        "You are a reminder parser. Output only valid JSON as instructed. No markdown, no explanation.",
+        user_prompt,
+        temperature=0.1,
+        max_tokens=1024,
+    )
     if not raw:
         return None
 
@@ -212,13 +187,9 @@ _WISH_SYSTEM = (
 )
 
 
-def generate_wish(reminder: dict, api_key: str) -> Optional[str]:
-    """Generate an Ana-style wish/reminder message using Gemini.
-
-    Uses a two-step reasoning prompt: Gemini is asked to first assess the right tone
-    then produce the final message — both in a single call, output is the message only.
-    """
-    if not api_key:
+def generate_wish(reminder: dict) -> Optional[str]:
+    """Generate an Ana-style wish/reminder message using Groq."""
+    if _groq_client is None:
         return None
 
     detail = (
@@ -229,18 +200,19 @@ def generate_wish(reminder: dict, api_key: str) -> Optional[str]:
     if reminder.get("notes"):
         detail += f"extra details: {reminder['notes']}\n"
 
-    # Reasoning step baked into the prompt — ask the model to consider tone before writing,
-    # but output only the final message. This produces more contextually appropriate results
-    # than a direct generation instruction.
-    prompt = (
-        _WISH_SYSTEM
-        + detail
+    user_prompt = (
+        detail
         + "\nbefore writing, consider silently: what specific tone fits this occasion type "
         "and this person's name? is it warm, teasing, practical, or quiet?\n"
         "then output ONLY the final message — nothing else."
     )
 
-    return _gemini_post(api_key, prompt, temperature=1.1, max_tokens=150)
+    return _groq_complete(
+        _WISH_SYSTEM,
+        user_prompt,
+        temperature=1.1,
+        max_tokens=512,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +225,7 @@ class ReminderStore:
     def __init__(self) -> None:
         self._reminders: list[dict] = []
         self._loaded: bool = False
+        self._dt_cache: dict[str, datetime.datetime] = {}
 
     def _load(self) -> None:
         """Populate from disk. Must be called while _LOCK is held."""
@@ -266,8 +239,25 @@ class ReminderStore:
                 data = json.load(f)
             if isinstance(data, list):
                 self._reminders = data
+                self._dt_cache.clear()
         except Exception:
             self._reminders = []
+            self._dt_cache.clear()
+
+    def _dt_for(self, reminder: dict) -> Optional[datetime.datetime]:
+        """Return timezone-aware IST datetime for a reminder using a small parse cache."""
+        rid = str(reminder.get("id", ""))
+        if rid:
+            cached = self._dt_cache.get(rid)
+            if cached is not None:
+                return cached
+        try:
+            dt = datetime.datetime.fromisoformat(reminder["datetime_ist"]).replace(tzinfo=_IST)
+        except Exception:
+            return None
+        if rid:
+            self._dt_cache[rid] = dt
+        return dt
 
     def _save(self) -> None:
         """Atomic write. Must be called while _LOCK is held."""
@@ -281,6 +271,7 @@ class ReminderStore:
         with _LOCK:
             self._load()
             self._reminders.append(reminder)
+            self._dt_for(reminder)
             self._save()
 
     def get_due(self, now_ist: datetime.datetime) -> list[dict]:
@@ -291,22 +282,23 @@ class ReminderStore:
             for r in self._reminders:
                 if r.get("done"):
                     continue
-                try:
-                    dt = datetime.datetime.fromisoformat(r["datetime_ist"]).replace(tzinfo=_IST)
-                    if dt <= now_ist:
-                        due.append(dict(r))
-                except Exception:
-                    pass
+                dt = self._dt_for(r)
+                if dt is not None and dt <= now_ist:
+                    due.append(dict(r))
             return due
 
     def mark_done(self, reminder_id: str) -> None:
         with _LOCK:
             self._load()
+            changed = False
             for r in self._reminders:
                 if r.get("id") == reminder_id:
-                    r["done"] = True
+                    if not r.get("done"):
+                        r["done"] = True
+                        changed = True
                     break
-            self._save()
+            if changed:
+                self._save()
 
     def mark_done_if_pending(self, reminder_id: str) -> bool:
         """Mark a reminder done only if it exists and is still pending.
