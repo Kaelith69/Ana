@@ -6,7 +6,8 @@ import re
 from typing import List, Optional
 from groq import Groq, RateLimitError as GroqRateLimitError
 from config import (
-    GEN1_API_KEY, GEN2_API_KEY, GROQ_API_KEY, SYSTEM_PROMPT,
+    GEN1_API_KEY, GEN2_API_KEY, GROQ_API_KEY, GROQ_BACKUP_API_KEY,
+    SYSTEM_PROMPT, CHARACTER_PROFILE_PATH,
     GROQ_MODEL_WATERFALL, MODEL_SETTINGS,
 )
 
@@ -90,6 +91,103 @@ GEN2_MODEL = "gemini-2.5-flash-lite"
 
 # Groq client (instantiated once, with an explicit network timeout)
 _groq_client: Optional[Groq] = Groq(api_key=GROQ_API_KEY, timeout=30.0) if GROQ_API_KEY else None
+_groq_backup_client: Optional[Groq] = (
+    Groq(api_key=GROQ_BACKUP_API_KEY, timeout=30.0) if GROQ_BACKUP_API_KEY else None
+)
+
+# Lazily loaded character profile so the bot reads the profile file only when
+# normal (non-roast/non-flirt) generation needs the full system prompt.
+_SYSTEM_PROMPT_CACHE: Optional[str] = None
+_MINIMAL_SYSTEM_PROMPT = (
+    "you are ana — real person in this server. reply briefly, naturally, and in lowercase texting style."
+)
+
+_PROFILE_ACCESS_DECISION_PROMPT = (
+    "You are a strict boolean classifier. Decide if a message requires loading Ana's full character profile "
+    "for a high-quality response. Return ONLY true or false.\n"
+    "Return true when persona-specific tone/memory/style constraints materially matter.\n"
+    "Return false for simple factual, short utility, or generic responses that do not need full persona context.\n"
+    "Output exactly one token: true or false."
+)
+
+
+def _load_system_prompt() -> str:
+    global _SYSTEM_PROMPT_CACHE
+
+    if SYSTEM_PROMPT:
+        return SYSTEM_PROMPT
+    if _SYSTEM_PROMPT_CACHE is not None:
+        return _SYSTEM_PROMPT_CACHE
+
+    try:
+        with open(CHARACTER_PROFILE_PATH, "r", encoding="utf-8") as f:
+            _SYSTEM_PROMPT_CACHE = f.read().strip()
+    except Exception as e:
+        print(f"[prompt] failed to load character profile from {CHARACTER_PROFILE_PATH!r}: {e}")
+        _SYSTEM_PROMPT_CACHE = "you are ana — real person in this server. reply briefly and naturally."
+
+    return _SYSTEM_PROMPT_CACHE
+
+
+def _parse_bool_response(raw: str) -> bool:
+    token = (raw or "").strip().lower()
+    if token in {"true", "1", "yes"}:
+        return True
+    if token in {"false", "0", "no"}:
+        return False
+    if "true" in token and "false" not in token:
+        return True
+    if "false" in token and "true" not in token:
+        return False
+    # Fail-safe: if uncertain, prefer loading profile for quality.
+    return True
+
+
+def _should_access_character_profile(
+    input_text: str,
+    history: Optional[List[dict]],
+    author_name: Optional[str],
+) -> bool:
+    """Use secondary Groq API to decide whether full character profile is required.
+
+    Returns True when full profile should be loaded, else False.
+    """
+    if _groq_backup_client is None:
+        return True
+
+    try:
+        model_id = GROQ_MODEL_WATERFALL[1] if len(GROQ_MODEL_WATERFALL) > 1 else GROQ_MODEL_WATERFALL[0]
+        snippets: List[str] = []
+        if history:
+            for entry in history[-4:]:
+                role = entry.get("role", "user")
+                content = str(entry.get("content", ""))[:180]
+                snippets.append(f"{role}: {content}")
+        if author_name:
+            snippets.append(f"author: {author_name}")
+        snippets.append(f"message: {input_text[:600]}")
+        classifier_input = "\n".join(snippets)
+
+        completion = _groq_backup_client.chat.completions.create(
+            model=model_id,
+            messages=[
+                {"role": "system", "content": _PROFILE_ACCESS_DECISION_PROMPT},
+                {"role": "user", "content": classifier_input},
+            ],
+            temperature=0.0,
+            max_completion_tokens=8,
+            top_p=1.0,
+            stream=False,
+            stop=None,
+        )
+        if not completion.choices:
+            return True
+        decision_raw = completion.choices[0].message.content or ""
+        decision = _parse_bool_response(decision_raw)
+        return decision
+    except Exception as e:
+        print(f"[profile-gate] classifier failed: {e}")
+        return True
 
 # Pre-compiled regexes used by normalize_response (avoids recompiling on every call)
 _RE_JSON_MSG_DOUBLE = re.compile(r'"message"\s*:\s*"([^"]+)"')
@@ -281,9 +379,21 @@ def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_nam
     if author_name:
         author_name = re.sub(r'[\r\n\t]', ' ', author_name).strip()[:50]
 
+    use_character_profile = True
+    if not roast and not flirt:
+        use_character_profile = _should_access_character_profile(clean_text, history, author_name)
+
     # Try Groq waterfall — internally cycles through GROQ_MODEL_WATERFALL
     try:
-        reply = call_groq(clean_text, history, author_name, roast, flirt, user_profile)
+        reply = call_groq(
+            clean_text,
+            history,
+            author_name,
+            roast,
+            flirt,
+            user_profile,
+            use_character_profile=use_character_profile,
+        )
         if reply:
             return reply
     except Exception as e:
@@ -291,7 +401,18 @@ def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_nam
 
     # Fallback to GEN1 (backup)
     try:
-        reply = call_gemini(GEN1_MODEL, GEN1_API_KEY, clean_text, history=history, author_name=author_name, roast=roast, flirt=flirt, label="Gen1", user_profile=user_profile)
+        reply = call_gemini(
+            GEN1_MODEL,
+            GEN1_API_KEY,
+            clean_text,
+            history=history,
+            author_name=author_name,
+            roast=roast,
+            flirt=flirt,
+            label="Gen1",
+            user_profile=user_profile,
+            use_character_profile=use_character_profile,
+        )
         if reply:
             return reply
     except Exception as e:
@@ -299,7 +420,18 @@ def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_nam
 
     # Final fallback to GEN2 (backup2)
     try:
-        reply = call_gemini(GEN2_MODEL, GEN2_API_KEY, clean_text, history=history, author_name=author_name, roast=roast, flirt=flirt, label="Gen2", user_profile=user_profile)
+        reply = call_gemini(
+            GEN2_MODEL,
+            GEN2_API_KEY,
+            clean_text,
+            history=history,
+            author_name=author_name,
+            roast=roast,
+            flirt=flirt,
+            label="Gen2",
+            user_profile=user_profile,
+            use_character_profile=use_character_profile,
+        )
         if reply:
             return reply
     except Exception as e:
@@ -341,6 +473,7 @@ def _build_context_layer() -> str:
 
 
 def _call_single_groq_model(
+    client: Groq,
     model_id: str,
     input_text: str,
     history: Optional[List[dict]],
@@ -348,6 +481,7 @@ def _call_single_groq_model(
     roast: bool,
     flirt: bool,
     user_profile: Optional[str] = None,
+    use_character_profile: bool = True,
 ) -> Optional[str]:
     """Call one specific Groq model and return the reply, or None if empty.
 
@@ -368,8 +502,10 @@ def _call_single_groq_model(
     top_p = settings.get("top_p", 0.92)
     thinking = settings.get("thinking")  # None = omit; False = disable (Qwen 3)
 
-    # Build prompt: roast/flirt are self-contained; normal mode gets model patch + day/time context.
-    base_prompt = ROAST_PROMPT if roast else (FLIRT_PROMPT if flirt else SYSTEM_PROMPT)
+    # Build prompt: roast/flirt are self-contained; normal mode gets profile + patch + day/time context.
+    base_prompt = ROAST_PROMPT if roast else (
+        FLIRT_PROMPT if flirt else (_load_system_prompt() if use_character_profile else _MINIMAL_SYSTEM_PROMPT)
+    )
     if not roast and not flirt:
         patch = settings.get("patch")
         if patch:
@@ -416,7 +552,7 @@ def _call_single_groq_model(
     if thinking is False:
         kwargs["extra_body"] = {"thinking": False}
 
-    completion = _groq_client.chat.completions.create(**kwargs)  # type: ignore[union-attr]
+    completion = client.chat.completions.create(**kwargs)
     if not completion.choices:
         return None
 
@@ -444,6 +580,7 @@ def call_groq(
     roast: bool = False,
     flirt: bool = False,
     user_profile: Optional[str] = None,
+    use_character_profile: bool = True,
 ) -> Optional[str]:
     """Try each model in GROQ_MODEL_WATERFALL in priority order.
 
@@ -452,10 +589,22 @@ def call_groq(
     """
     if _groq_client is None:
         return None
-    for model_id in GROQ_MODEL_WATERFALL:
+    for idx, model_id in enumerate(GROQ_MODEL_WATERFALL):
+        # Primary model uses GROQ_API_KEY.
+        # Secondary/fallback models use GROQ_BACKUP_API_KEY when provided,
+        # else they transparently fall back to GROQ_API_KEY.
+        client = _groq_client if idx == 0 else (_groq_backup_client or _groq_client)
         try:
             reply = _call_single_groq_model(
-                model_id, input_text, history, author_name, roast, flirt, user_profile
+                client,
+                model_id,
+                input_text,
+                history,
+                author_name,
+                roast,
+                flirt,
+                user_profile,
+                use_character_profile,
             )
             if reply:
                 return reply
@@ -466,7 +615,7 @@ def call_groq(
     return None
 
 
-def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Optional[List[dict]] = None, author_name: Optional[str] = None, roast: bool = False, flirt: bool = False, label: str = "Gemini", user_profile: Optional[str] = None) -> Optional[str]:
+def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Optional[List[dict]] = None, author_name: Optional[str] = None, roast: bool = False, flirt: bool = False, label: str = "Gemini", user_profile: Optional[str] = None, use_character_profile: bool = True) -> Optional[str]:
     """Call a Gemini model via the Google Generative Language API.
 
     Used for both Gen1 and Gen2 fallbacks.
@@ -479,7 +628,9 @@ def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Op
         "Content-Type": "application/json",
         "X-goog-api-key": api_key,
     }
-    prompt = ROAST_PROMPT if roast else (FLIRT_PROMPT if flirt else SYSTEM_PROMPT)
+    prompt = ROAST_PROMPT if roast else (
+        FLIRT_PROMPT if flirt else (_load_system_prompt() if use_character_profile else _MINIMAL_SYSTEM_PROMPT)
+    )
     if not roast and not flirt:
         prompt += "\n\n" + _build_context_layer()
         prompt += (
