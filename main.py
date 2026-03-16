@@ -301,7 +301,6 @@ async def _cleanup_cooldowns() -> None:
     for cid in stale_channels:
         del _channel_last_reply[cid]
         _history.pop(cid, None)
-        del _channel_last_reply[cid]
 
 
 @bot.event
