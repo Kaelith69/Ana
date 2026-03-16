@@ -171,6 +171,17 @@ _FOLLOWUPS = [
     "i have no follow-through i'm sorry",
 ]
 
+_JOKE_SETUPS = [
+    "okay don't judge me",
+    "wait i have one",
+    "ok bear with me",
+    "this is terrible and i love it",
+    "i hate that this made me laugh",
+    "you asked for this",
+    "ok this one's bad. in a good way.",
+    "u didn't hear this from me",
+]
+
 
 def _sanitize_name_for_api(name: str) -> str:
     """Return an API-safe participant name: a-z, A-Z, 0-9, underscores only, max 64 chars.
@@ -271,16 +282,6 @@ async def joke(ctx):
     if not punchline:
         await ctx.send("idk any rn try again later lol")
         return
-    _JOKE_SETUPS = [
-        "okay don't judge me",
-        "wait i have one",
-        "ok bear with me",
-        "this is terrible and i love it",
-        "i hate that this made me laugh",
-        "you asked for this",
-        "ok this one's bad. in a good way.",
-        "u didn't hear this from me",
-    ]
     await ctx.send(random.choice(_JOKE_SETUPS))
     await asyncio.sleep(random.uniform(1.0, 2.0))
     async with ctx.typing():
@@ -291,14 +292,12 @@ async def joke(ctx):
 async def _cleanup_cooldowns() -> None:
     """Periodically prune stale entries from the cooldown dicts and history to bound memory use."""
     now = asyncio.get_running_loop().time()
-    stale_history = [cid for cid, ts in _channel_last_reply.items() if now - ts > 3600]
-    for cid in stale_history:
-        _history.pop(cid, None)
     stale_users = [uid for uid, ts in _user_last_reply.items() if now - ts > USER_COOLDOWN * 20]
     stale_channels = [cid for cid, ts in _channel_last_reply.items() if now - ts > CHANNEL_COOLDOWN * 20]
     for uid in stale_users:
         del _user_last_reply[uid]
     for cid in stale_channels:
+        _history.pop(cid, None)
         del _channel_last_reply[cid]
 
 
@@ -320,11 +319,11 @@ async def on_message(message):
 
     content = (message.content or "").lower()
     mentioned = bot.user in message.mentions
+    is_roast = bool(ROAST_PATTERN.search(content))
+    is_flirt = (not is_roast) and bool(FLIRT_PATTERN.search(content))
+    is_trigger_word = bool(TRIGGER_PATTERN.search(content))
     # Roast/flirt words should independently trigger Ana, not just change her mode
-    is_trigger = (mentioned
-                  or bool(TRIGGER_PATTERN.search(content))
-                  or bool(ROAST_PATTERN.search(content))
-                  or bool(FLIRT_PATTERN.search(content)))
+    is_trigger = mentioned or is_trigger_word or is_roast or is_flirt
 
     if not is_trigger:
         try:
@@ -340,10 +339,6 @@ async def on_message(message):
     try:
         clean_content = re.sub(r'[^\w\s]', '', content)
         words = set(clean_content.split())
-
-        # Detect roast/flirt early — roasts bypass all cooldowns and skip-chances
-        is_roast = bool(ROAST_PATTERN.search(content))
-        is_flirt = not is_roast and bool(FLIRT_PATTERN.search(content))
 
         # Silently skip ~5% of the time on low-signal words (never skip a roast)
         is_low_signal = not mentioned and bool(words) and words.issubset(_LOW_SIGNAL)

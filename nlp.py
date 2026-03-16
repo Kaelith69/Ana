@@ -595,7 +595,15 @@ def call_groq(
     """
     if _groq_client is None:
         return None
+    seen_models: set[str] = set()
+    deduped_models: list[tuple[int, str]] = []
     for idx, model_id in enumerate(GROQ_MODEL_WATERFALL):
+        if model_id in seen_models:
+            continue
+        seen_models.add(model_id)
+        deduped_models.append((idx, model_id))
+
+    for idx, model_id in deduped_models:
         # Primary model uses GROQ_API_KEY.
         # Secondary/fallback models use GROQ_BACKUP_API_KEY when provided,
         # else they transparently fall back to GROQ_API_KEY.
