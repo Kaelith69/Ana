@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-label="Ana request lifecycle diagram">
+  <defs>
+    <style>
+      .title { font: 700 28px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .node { fill: #f8fafc; stroke: #334155; stroke-width: 2; rx: 12; }
+      .gate { fill: #dbeafe; }
+      .text { font: 600 16px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .sub { font: 500 13px 'Segoe UI', Arial, sans-serif; fill: #334155; }
+      .line { stroke: #475569; stroke-width: 2.5; fill: none; marker-end: url(#m); }
+    </style>
+    <marker id="m" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#475569" />
+    </marker>
+  </defs>
+
+  <rect width="1200" height="760" fill="#ffffff" />
+  <text x="40" y="50" class="title">Triggered Message Lifecycle</text>
+
+  <rect x="70" y="100" width="220" height="80" class="node" />
+  <text x="90" y="135" class="text">Discord message event</text>
+
+  <rect x="340" y="100" width="220" height="80" class="node gate" />
+  <text x="370" y="135" class="text">Trigger detection</text>
+  <text x="365" y="155" class="sub">mention or pattern hit</text>
+
+  <rect x="620" y="100" width="250" height="80" class="node" />
+  <text x="650" y="135" class="text">Cooldown and behavior gates</text>
+  <text x="655" y="155" class="sub">skip, ghost-typing, reaction overlay</text>
+
+  <rect x="930" y="100" width="220" height="80" class="node" />
+  <text x="960" y="135" class="text">Context assembly</text>
+  <text x="950" y="155" class="sub">mentions, reply context, history</text>
+
+  <rect x="930" y="240" width="220" height="90" class="node" />
+  <text x="955" y="275" class="text">process_with_nlp</text>
+  <text x="950" y="295" class="sub">asyncio.to_thread offload</text>
+
+  <rect x="640" y="240" width="230" height="90" class="node" />
+  <text x="665" y="275" class="text">Groq waterfall</text>
+  <text x="655" y="295" class="sub">primary then backups</text>
+
+  <rect x="360" y="240" width="220" height="90" class="node" />
+  <text x="390" y="275" class="text">Gemini fallback chain</text>
+  <text x="390" y="295" class="sub">Gen1 then Gen2</text>
+
+  <rect x="80" y="240" width="220" height="90" class="node" />
+  <text x="105" y="275" class="text">Static fallback</text>
+  <text x="95" y="295" class="sub">short canned human-like lines</text>
+
+  <rect x="360" y="400" width="500" height="90" class="node gate" />
+  <text x="385" y="435" class="text">normalize_response and post_process</text>
+  <text x="385" y="455" class="sub">strip artifacts and enforce texting style</text>
+
+  <rect x="360" y="550" width="500" height="90" class="node" />
+  <text x="385" y="585" class="text">Send message chunks and optional follow-up</text>
+  <text x="385" y="605" class="sub">reply/send plus typo-correction and mode follow-ups</text>
+
+  <rect x="900" y="550" width="250" height="90" class="node" />
+  <text x="925" y="585" class="text">Background profile update</text>
+  <text x="930" y="605" class="sub">extract and merge user facts</text>
+
+  <path class="line" d="M290 140 L340 140" />
+  <path class="line" d="M560 140 L620 140" />
+  <path class="line" d="M870 140 L930 140" />
+  <path class="line" d="M1040 180 L1040 240" />
+  <path class="line" d="M930 285 L870 285" />
+  <path class="line" d="M640 285 L580 285" />
+  <path class="line" d="M360 285 L300 285" />
+  <path class="line" d="M750 330 L750 400" />
+  <path class="line" d="M610 490 L610 550" />
+  <path class="line" d="M860 595 L900 595" />
+</svg>

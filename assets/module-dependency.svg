@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-label="Ana module dependency diagram">
+  <defs>
+    <style>
+      .title { font: 700 28px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .box { fill: #f8fafc; stroke: #334155; stroke-width: 2; rx: 12; }
+      .core { fill: #dbeafe; }
+      .text { font: 600 18px 'Segoe UI', Arial, sans-serif; fill: #0f172a; }
+      .sub { font: 500 14px 'Segoe UI', Arial, sans-serif; fill: #334155; }
+      .arrow { stroke: #475569; stroke-width: 2.5; fill: none; marker-end: url(#m); }
+    </style>
+    <marker id="m" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#475569" />
+    </marker>
+  </defs>
+
+  <rect width="1200" height="700" fill="#ffffff" />
+  <text x="40" y="50" class="title">Ana Module Dependency Diagram</text>
+
+  <rect x="80" y="110" width="240" height="110" class="box core" />
+  <text x="105" y="150" class="text">main.py</text>
+  <text x="105" y="175" class="sub">discord events and routing</text>
+
+  <rect x="420" y="90" width="260" height="120" class="box" />
+  <text x="445" y="130" class="text">nlp.py</text>
+  <text x="445" y="155" class="sub">model waterfall and post-process</text>
+
+  <rect x="760" y="90" width="320" height="120" class="box" />
+  <text x="785" y="130" class="text">config.py</text>
+  <text x="785" y="155" class="sub">env, model settings, trigger words</text>
+
+  <rect x="420" y="280" width="260" height="110" class="box" />
+  <text x="445" y="320" class="text">profiles.py</text>
+  <text x="445" y="345" class="sub">profile extraction and JSON store</text>
+
+  <rect x="80" y="290" width="240" height="110" class="box" />
+  <text x="105" y="330" class="text">jokes.py</text>
+  <text x="105" y="355" class="sub">dad joke service and limits</text>
+
+  <rect x="760" y="285" width="320" height="110" class="box" />
+  <text x="785" y="325" class="text">keepalive.py</text>
+  <text x="785" y="350" class="sub">Flask GET / health endpoint</text>
+
+  <rect x="80" y="490" width="360" height="130" class="box" />
+  <text x="105" y="530" class="text">data/profiles/*.json</text>
+  <text x="105" y="555" class="sub">persisted user facts by user id</text>
+
+  <rect x="520" y="490" width="560" height="130" class="box" />
+  <text x="545" y="530" class="text">External Services</text>
+  <text x="545" y="555" class="sub">Discord API, Groq API, Gemini API, icanhazdadjoke API</text>
+
+  <path class="arrow" d="M320 150 L420 150" />
+  <path class="arrow" d="M320 180 L760 150" />
+  <path class="arrow" d="M320 340 L420 340" />
+  <path class="arrow" d="M680 150 L760 150" />
+  <path class="arrow" d="M680 150 L800 520" />
+  <path class="arrow" d="M550 390 L260 490" />
+  <path class="arrow" d="M200 400 L200 490" />
+  <path class="arrow" d="M840 395 L840 490" />
+  <path class="arrow" d="M680 330 L800 520" />
+</svg>
