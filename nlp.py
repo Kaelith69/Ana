@@ -379,9 +379,9 @@ def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_nam
     if author_name:
         author_name = re.sub(r'[\r\n\t]', ' ', author_name).strip()[:50]
 
-    use_character_profile = True
-    if not roast and not flirt:
-        use_character_profile = _should_access_character_profile(clean_text, history, author_name)
+    # Analyze every input with the secondary API and use its strict boolean decision
+    # to determine whether character profile file access is needed.
+    use_character_profile = _should_access_character_profile(clean_text, history, author_name)
 
     # Try Groq waterfall — internally cycles through GROQ_MODEL_WATERFALL
     try:
@@ -502,10 +502,16 @@ def _call_single_groq_model(
     top_p = settings.get("top_p", 0.92)
     thinking = settings.get("thinking")  # None = omit; False = disable (Qwen 3)
 
-    # Build prompt: roast/flirt are self-contained; normal mode gets profile + patch + day/time context.
-    base_prompt = ROAST_PROMPT if roast else (
-        FLIRT_PROMPT if flirt else (_load_system_prompt() if use_character_profile else _MINIMAL_SYSTEM_PROMPT)
-    )
+    character_prompt = _load_system_prompt() if use_character_profile else _MINIMAL_SYSTEM_PROMPT
+
+    # Build prompt for all modes with boolean-gated character context.
+    # If access is denied (False), no file-based character prompt is loaded.
+    if roast:
+        base_prompt = f"{ROAST_PROMPT}\n\n[character context]\n{character_prompt}"
+    elif flirt:
+        base_prompt = f"{FLIRT_PROMPT}\n\n[character context]\n{character_prompt}"
+    else:
+        base_prompt = character_prompt
     if not roast and not flirt:
         patch = settings.get("patch")
         if patch:
@@ -628,9 +634,13 @@ def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Op
         "Content-Type": "application/json",
         "X-goog-api-key": api_key,
     }
-    prompt = ROAST_PROMPT if roast else (
-        FLIRT_PROMPT if flirt else (_load_system_prompt() if use_character_profile else _MINIMAL_SYSTEM_PROMPT)
-    )
+    character_prompt = _load_system_prompt() if use_character_profile else _MINIMAL_SYSTEM_PROMPT
+    if roast:
+        prompt = f"{ROAST_PROMPT}\n\n[character context]\n{character_prompt}"
+    elif flirt:
+        prompt = f"{FLIRT_PROMPT}\n\n[character context]\n{character_prompt}"
+    else:
+        prompt = character_prompt
     if not roast and not flirt:
         prompt += "\n\n" + _build_context_layer()
         prompt += (
