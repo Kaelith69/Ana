@@ -352,16 +352,8 @@ async def on_message(message):
         if not mentioned and not is_roast and now - _channel_last_reply.get(cid, 0) < CHANNEL_COOLDOWN:
             return
 
-        # Per-user cooldown — roasts always get a reply; otherwise do the "seen" reaction
+        # Per-user cooldown — roasts always get a reply; otherwise skip to prevent spam.
         if not mentioned and not is_roast and now - _user_last_reply.get(uid, 0) < USER_COOLDOWN:
-            await asyncio.sleep(random.uniform(0.5, 2.5))
-            await message.add_reaction(random.choice(["👀", "💀", "😭"]))
-            return
-
-        # ~8% chance to just react instead of replying (never on roasts — she always fires back)
-        if not mentioned and not is_roast and random.random() < 0.08:
-            await message.add_reaction(random.choice(_REACTIONS))
-            _channel_last_reply[cid] = now
             return
 
         # ~6% chance of ghost typing — she starts typing then goes quiet

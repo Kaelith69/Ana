@@ -160,9 +160,10 @@ def _should_access_character_profile(
     history: Optional[List[dict]],
     author_name: Optional[str],
 ) -> bool:
-    """Use secondary Groq API to decide whether full character profile is required.
-
-    Returns True when full profile should be loaded, else False.
+    """Use the backup Groq API (GROQ_BACKUP_API_KEY) to decide whether the full
+    character profile is required. The backup key is strictly reserved for input
+    analysis — never used for chat generation. Returns True (load full profile)
+    on any error or if the backup client is unavailable.
     """
     if _groq_backup_client is None:
         return True

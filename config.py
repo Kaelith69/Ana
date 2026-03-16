@@ -5,7 +5,8 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# Prefer current .env values over inherited shell env to avoid stale API keys.
+load_dotenv(override=True)
 
 
 def _int_env(var_name: str, default: int) -> int:
