@@ -15,6 +15,8 @@ from profiles import profile_store, extract_profile_info
 TRIGGER_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, TRIGGER_WORDS)) + r')\b', re.IGNORECASE)
 ROAST_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, sorted(ROAST_WORDS))) + r')\b', re.IGNORECASE)
 FLIRT_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, sorted(FLIRT_WORDS))) + r')\b', re.IGNORECASE)
+MENTION_TOKEN_PATTERN = re.compile(r'<@!?(\d+)>')
+NON_WORD_PATTERN = re.compile(r'[^\w\s]')
 
 intents = discord.Intents.default()
 intents.messages = True
@@ -202,7 +204,7 @@ def _resolve_mentions(content: str, message: discord.Message) -> str:
         uid = int(m.group(1))
         member = guild.get_member(uid)
         return f"@{member.display_name}" if member else m.group(0)
-    return re.sub(r'<@!?(\d+)>', _replace, content)
+    return MENTION_TOKEN_PATTERN.sub(_replace, content)
 
 
 def _maybe_typo(text: str) -> tuple[str, str | None]:
@@ -297,6 +299,7 @@ async def _cleanup_cooldowns() -> None:
     for uid in stale_users:
         del _user_last_reply[uid]
     for cid in stale_channels:
+        del _channel_last_reply[cid]
         _history.pop(cid, None)
         del _channel_last_reply[cid]
 
@@ -337,7 +340,7 @@ async def on_message(message):
     cid = message.channel.id
 
     try:
-        clean_content = re.sub(r'[^\w\s]', '', content)
+        clean_content = NON_WORD_PATTERN.sub('', content)
         words = set(clean_content.split())
 
         # Silently skip ~5% of the time on low-signal words (never skip a roast)

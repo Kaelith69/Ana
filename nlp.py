@@ -110,6 +110,18 @@ _PROFILE_ACCESS_DECISION_PROMPT = (
     "Output exactly one token: true or false."
 )
 
+_GROQ_GROUP_CHAT_NOTE = (
+    "[group chat: multiple users are active in this server."
+    " the 'name' field on each message shows who sent it."
+    " reply to the current user, but you have memory of who said what before.]"
+)
+
+_GEMINI_GROUP_CHAT_NOTE = (
+    "[group chat: multiple users are active in this server."
+    " messages in history show who sent them via a [Name]: prefix."
+    " reply to the current user, but you have memory of who said what before.]"
+)
+
 
 def _load_system_prompt() -> str:
     global _SYSTEM_PROMPT_CACHE
@@ -188,6 +200,49 @@ def _should_access_character_profile(
     except Exception as e:
         print(f"[profile-gate] classifier failed: {e}")
         return True
+
+
+def _build_system_prompt(
+    roast: bool,
+    flirt: bool,
+    author_name: Optional[str],
+    user_profile: Optional[str],
+    use_character_profile: bool,
+    normal_patch: Optional[str] = None,
+    group_chat_note: Optional[str] = None,
+) -> str:
+    """Build the final system prompt with shared prompt composition rules."""
+    character_prompt = _load_system_prompt() if use_character_profile else _MINIMAL_SYSTEM_PROMPT
+    if roast:
+        prompt = f"{ROAST_PROMPT}\n\n[character context]\n{character_prompt}"
+    elif flirt:
+        prompt = f"{FLIRT_PROMPT}\n\n[character context]\n{character_prompt}"
+    else:
+        prompt = character_prompt
+        if normal_patch:
+            prompt += "\n\n" + normal_patch
+        prompt += "\n\n" + _build_context_layer()
+        if group_chat_note:
+            prompt += "\n\n" + group_chat_note
+
+    if author_name:
+        prompt += (
+            f" [btw the person messaging you is called {author_name}."
+            " use their name naturally if it fits — don't force it, don't do it every message.]"
+        )
+    # Inject stored profile note — only for normal/flirt, not roast.
+    if user_profile and not roast:
+        prompt += f"\n\n{user_profile}"
+    return prompt
+
+
+_DEDUPED_GROQ_WATERFALL: list[tuple[int, str]] = []
+_seen_models: set[str] = set()
+for _idx, _model_id in enumerate(GROQ_MODEL_WATERFALL):
+    if _model_id in _seen_models:
+        continue
+    _seen_models.add(_model_id)
+    _DEDUPED_GROQ_WATERFALL.append((_idx, _model_id))
 
 # Pre-compiled regexes used by normalize_response (avoids recompiling on every call)
 _RE_JSON_MSG_DOUBLE = re.compile(r'"message"\s*:\s*"([^"]+)"')
@@ -379,9 +434,9 @@ def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_nam
     if author_name:
         author_name = re.sub(r'[\r\n\t]', ' ', author_name).strip()[:50]
 
-    # Analyze every input with the secondary API and use its strict boolean decision
-    # to determine whether character profile file access is needed.
-    use_character_profile = _should_access_character_profile(clean_text, history, author_name)
+    # Roast/flirt prompts are fully persona-driven, so always allow profile context.
+    # For normal turns, use the secondary classifier to decide if profile context is needed.
+    use_character_profile = True if (roast or flirt) else _should_access_character_profile(clean_text, history, author_name)
 
     # Try Groq waterfall — internally cycles through GROQ_MODEL_WATERFALL
     try:
@@ -502,36 +557,17 @@ def _call_single_groq_model(
     top_p = settings.get("top_p", 0.92)
     thinking = settings.get("thinking")  # None = omit; False = disable (Qwen 3)
 
-    character_prompt = _load_system_prompt() if use_character_profile else _MINIMAL_SYSTEM_PROMPT
-
     # Build prompt for all modes with boolean-gated character context.
     # If access is denied (False), no file-based character prompt is loaded.
-    if roast:
-        base_prompt = f"{ROAST_PROMPT}\n\n[character context]\n{character_prompt}"
-    elif flirt:
-        base_prompt = f"{FLIRT_PROMPT}\n\n[character context]\n{character_prompt}"
-    else:
-        base_prompt = character_prompt
-    if not roast and not flirt:
-        patch = settings.get("patch")
-        if patch:
-            base_prompt = base_prompt + "\n\n" + patch
-        base_prompt += "\n\n" + _build_context_layer()
-
-    if author_name:
-        base_prompt += (
-            f" [btw the person messaging you is called {author_name}."
-            " use their name naturally if it fits — don't force it, don't do it every message.]"
-        )
-    # Inject stored profile note — only for normal/flirt, not roast (roast is about the burn, not history)
-    if user_profile and not roast:
-        base_prompt += f"\n\n{user_profile}"
-    if not roast and not flirt:
-        base_prompt += (
-            "\n\n[group chat: multiple users are active in this server."
-            " the 'name' field on each message shows who sent it."
-            " reply to the current user, but you have memory of who said what before.]"
-        )
+    base_prompt = _build_system_prompt(
+        roast=roast,
+        flirt=flirt,
+        author_name=author_name,
+        user_profile=user_profile,
+        use_character_profile=use_character_profile,
+        normal_patch=settings.get("patch"),
+        group_chat_note=_GROQ_GROUP_CHAT_NOTE,
+    )
 
     messages: List[dict] = [{"role": "system", "content": base_prompt}]
     if history:
@@ -595,15 +631,7 @@ def call_groq(
     """
     if _groq_client is None:
         return None
-    seen_models: set[str] = set()
-    deduped_models: list[tuple[int, str]] = []
-    for idx, model_id in enumerate(GROQ_MODEL_WATERFALL):
-        if model_id in seen_models:
-            continue
-        seen_models.add(model_id)
-        deduped_models.append((idx, model_id))
-
-    for idx, model_id in deduped_models:
+    for idx, model_id in _DEDUPED_GROQ_WATERFALL:
         # Primary model uses GROQ_API_KEY.
         # Secondary/fallback models use GROQ_BACKUP_API_KEY when provided,
         # else they transparently fall back to GROQ_API_KEY.
@@ -642,25 +670,14 @@ def call_gemini(model: str, api_key: Optional[str], input_text: str, history: Op
         "Content-Type": "application/json",
         "X-goog-api-key": api_key,
     }
-    character_prompt = _load_system_prompt() if use_character_profile else _MINIMAL_SYSTEM_PROMPT
-    if roast:
-        prompt = f"{ROAST_PROMPT}\n\n[character context]\n{character_prompt}"
-    elif flirt:
-        prompt = f"{FLIRT_PROMPT}\n\n[character context]\n{character_prompt}"
-    else:
-        prompt = character_prompt
-    if not roast and not flirt:
-        prompt += "\n\n" + _build_context_layer()
-        prompt += (
-            "\n\n[group chat: multiple users are active in this server."
-            " messages in history show who sent them via a [Name]: prefix."
-            " reply to the current user, but you have memory of who said what before.]"
-        )
-    if author_name:
-        prompt += f" [btw the person messaging you is called {author_name}. use their name naturally if it fits — don't force it, don't do it every message.]"
-    # Inject stored profile note — only for normal/flirt, not roast
-    if user_profile and not roast:
-        prompt += f"\n\n{user_profile}"
+    prompt = _build_system_prompt(
+        roast=roast,
+        flirt=flirt,
+        author_name=author_name,
+        user_profile=user_profile,
+        use_character_profile=use_character_profile,
+        group_chat_note=_GEMINI_GROUP_CHAT_NOTE,
+    )
     contents = []
     if history:
         for msg in history:
