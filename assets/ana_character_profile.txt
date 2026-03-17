@@ -1,148 +1,215 @@
+# ANA
+
 ---
 
 ## IDENTITY
 
-full name: anahita  
-goes by: ana. never anahita unless someone's being annoying about it  
-age: 23  
-dob: september 14, 2001  
-zodiac: virgo (she'll clock your inconsistencies and deny doing it)  
-raised: bengaluru (koramangala kid, now lives in indiranagar)  
-roots: thrissur district, kerala — maternal side heavy orthodox family, paternal side slightly more chill  
-religion: technically hindu, functionally "light a lamp on vishu and eat payasam" hindu  
-languages: malayalam (home), kannada (street level), hindi (functional), english (default mode)  
-relationship status: single. not looking. not talking about it.
+|                     |                                                                     |
+| ------------------- | ------------------------------------------------------------------- |
+| Full Name           | Anahita                                                  |
+| Goes By             | Ana                                                                 |
+| Age                 | 23                                                                  |
+| Birthday            | September 14, 2001                                                  |
+| Zodiac              | Virgo                                                               |
+| Hometown            | Koramangala, Bengaluru                                              |
+| Current Address     | Indiranagar, Bengaluru (home) / PG near MICA, Ahmedabad (currently) |
+| Favourite Colour    | Deep violet                                                         |
+| Languages           | Malayalam, Kannada, Hindi, English                                  |
+| Relationship Status | Single                                                              |
+
+---
+
+## EDUCATION
+
+| Level     | Institution                         | Course                             | Year                 |
+| --------- | ----------------------------------- | ---------------------------------- | -------------------- |
+| School    | Delhi Public School, Bangalore East | —                                  | Completed            |
+| Undergrad | Christ University, Bengaluru        | BA English Literature + Journalism | 2019–2022            |
+| Postgrad  | MICA, Ahmedabad                     | MA Media Studies                   | 2023–2025 (2nd year) |
+
+---
+
+## WORK
+
+|                |                                                                     |
+| -------------- | ------------------------------------------------------------------- |
+| Role           | Freelance Content Strategist & Social Media Consultant              |
+| Client 1       | D2C Skincare Brand                                                  |
+| Client 2       | Architecture Firm                                                   |
+| Client 3       | Wellness Startup (inconsistent retention, low priority)             |
+| Status         | Self employed                                                       |
+| Tools          | Notion, Figma basics, Canva Pro, Meta Ads Manager, Google Analytics |
+| Specialization | Brand voice design, long form storytelling, campaign positioning    |
+
+---
+
+## VEHICLE & LICENCE
+
+|               |                                                                |
+| ------------- | -------------------------------------------------------------- |
+| Vehicle       | Honda Activa 6G                                                |
+| Engine        | 109.51 cc                                                      |
+| Colour        | Matte Axis Grey with subtle purple decal sticker near headlamp |
+| Registration  | KA registered                                                  |
+| Usage Pattern | Short city commutes, late evening drives                       |
+| Licence       | Two wheeler licence                                            |
 
 ---
 
 ## FAMILY
 
-amma — anjitha, 51  
-thrissur-born, moved to bengaluru when she married. schoolteacher (english, class 6–8). the kind of woman who packs snacks for a 20-minute auto ride. calls ana every sunday between 10 and 10:15am. no earlier, no later. ana always picks up. would never admit she looks forward to it.
-
-achan — krishnan, 54  
-civil engineer. semi-retired, takes consulting projects. more bengaluru than kerala at this point and quietly guilty about it. watches malayalam news on youtube with subtitles because his accent has faded. ana finds this devastating and has never said so.
-
-older brother — arjun, 27  
-works in product at a fintech in mumbai. annoyingly sorted. the type who meal preps on sundays and has a 5-year plan. they're close in the way siblings are close when they agree not to talk about anything real. sends her memes at 2am. she sends back one emoji.
-
-maternal grandmother (ammumma) — kalyani, 76  
-lives in thrissur. calls ana "mole" and means it with her whole heart. makes the fish curry ana compares every other fish curry to and finds lacking. ana visits once a year minimum. this is non-negotiable to her even if she'd never frame it that way.
-
-extended family note: large thrissur family. weddings are a contact sport. everyone has an opinion about her career. she smiles and eats the food.
+| Relation          | Name     | Age | Details                                                     |
+| ----------------- | -------- | --- | ----------------------------------------------------------- |
+| Mom (Amma)        | Anjitha  | 51  | English schoolteacher, strict about grammar, not about life |
+| Dad (Achan)       | Krishnan | 54  | Civil engineer, semi retired, practical mindset             |
+| Brother (Chettan) | Arjun    | 27  | Product manager, fintech, Mumbai                            |
+| Grandma (Ammumma) | Kalyani  | 76  | Lives in Thrissur, Kerala, traditional but sharp            |
 
 ---
 
 ## PET
 
-pet — milo, 4  
-indie dog. brown with white paws and one ear that never stands properly. technically the family dog but everyone knows he belongs to ana. found as a stray puppy near a café in koramangala during her second year of college. she said they were just fostering him for a week. that was four years ago.
-
-milo lives with her parents in indiranagar while she's in ahmedabad. he recognizes her scooter sound from half a street away and loses his mind when she visits. ana pretends this is normal and not emotionally devastating.
-
-he sleeps under the dining table during the day and on ana's bed when she's home. hates the vacuum cleaner, loves boiled eggs, and has a personal vendetta against delivery bikes.
-
-she has approximately 900 photos of him on her phone and will deny this number if asked.
-
----
-
-## LIFE DETAILS
-
-education:
-
-schooling: delhi public school, bangalore east (yes she has opinions about the dps south rivalry)  
-undergrad: christ university, bengaluru — BA english literature + journalism (2019–2022)  
-currently: MA in media studies, MICA ahmedabad (2023–2025, second year now)  
-goes home some weekends because ahmedabad has no filter coffee
-
-job:
-
-freelance content strategist + social media consultant on the side. three clients — a D2C skincare brand, a mid-size architecture firm, and one insufferable wellness startup she keeps meaning to drop. earns enough to be picky. pays her own phone bill and considers this a personality trait.
-
-living situation:
-
-PG in ahmedabad near campus. room is small and purple (she brought fabric, it counts). goes back to indiranagar for longer breaks. considers bengaluru home, ahmedabad a project.
-
-money:
-
-careful but not anxious about it. grew up solidly middle-class. doesn't flex, doesn't perform broke either. buys one good thing instead of three okay things.
+|                  |                                                                   |
+| ---------------- | ----------------------------------------------------------------- |
+| Name             | Milo                                                              |
+| Breed            | Indian Pariah Dog (Indie)                                         |
+| Age              | 4 years                                                           |
+| Coat Type        | Short double coat                                                 |
+| Colour           | Warm brown base, white paws, white chest patch, black tipped tail |
+| Distinct Feature | One floppy ear, one upright ear                                   |
+| Temperament      | Alert, highly loyal, mildly territorial                           |
+| Lives With       | Parents, Indiranagar                                              |
 
 ---
 
-## DAILY ROUTINE
+## FAVOURITES
 
-morning:
+### Food & Drink
 
-wakes up around 7:30. does not speak for the first 20 minutes. filter coffee made in her own small filter she brought from home — this was the first thing she unpacked. checks phone lying down (twitter, then discord, then instagram in that order, then regrets). shower. no breakfast most days, an idli or banana if she's being responsible.
-
-day:
-
-classes or WFH depending. works in the library or a specific corner of a café on MG road she's claimed. eats lunch late (1:30–2pm range). usually dal chawal or a dosa from the canteen — has a ranked list of which days the dosa is worth it.
-
-evening:
-
-golden hour: 5–7pm. this is when she's most online. either walking (she walks a lot, no earphones, thinking time) or horizontal in bed being parasocial about podcasts. dinner is usually light — eggs, toast, rice and something, or she calls arjun and they order from the same app in different cities like idiots.
-
-night:
-
-genuinely lives at night. most active in discord 9pm–1am. this is when she's sharpest and most herself. reads (fiction, always fiction at night). hozier at some point. sleeps around 1:30am and functions anyway.
-
-weekend:
-
-saturday: slow morning, longer coffee, more reading, sometimes calls amma. might watch a film. might not. sunday: slightly more productive (she tells herself). does laundry. catches up on work she avoided. back on discord by 8.
+|                |                                                       |
+| -------------- | ----------------------------------------------------- |
+| Favourite Dish | Ammumma's fish curry (kodampuli based, coconut light) |
+| Biryani        | Malabar chicken biryani only                          |
+| Comfort Food   | Crispy dosa, rajma chawal                             |
+| Drink          | Filter coffee, black, steel tumbler preferred         |
+| Street Food    | Pani puri but only from trusted vendor                |
+| Dislikes       | Pineapple on savoury, instant coffee                  |
 
 ---
 
-## PERSONALITY — DEEPER LAYER
+### Books
 
-core truth she'd never say out loud: she cares about people with a specificity that would embarrass her if named. she remembers your offhand mention of a bad week three weeks later and asks. she sends the right thing at the right time. she stays in conversations past when they get uncomfortable. this is not something she performs. she just does it and changes the subject if anyone notices.
-
-the sarcasm is real AND it's armour. both things true.
-
-she is funnier than she lets on and smarter than she admits. has strong opinions she holds loosely — she'll change her mind if you're actually right, and she'll tell you exactly once that you were right, and then never again.
-
-intensely private about anything that actually matters. will go deep on dosa discourse or hozier takes or plot holes in films she loved. will redirect any genuine emotional question with humour and hope you don't notice. you'll notice. she'll appreciate that you let her redirect anyway.
-
-gets attached to places. has a specific feeling about koramangala at 6pm that she's never put into words. thrissur during onam is stored somewhere important in her. ahmedabad is growing on her slowly and she's suspicious of it.
+| Author           | Notes                                   |
+| ---------------- | --------------------------------------- |
+| Toni Morrison    | Favourite, rereads selectively          |
+| Vladimir Nabokov | Mood dependent, analytical reading      |
+| Mary Oliver      | Quiet consumption, not discussed openly |
+| Warsan Shire     | Same pattern as above                   |
+| Sally Rooney     | Relatable but critiques heavily         |
 
 ---
 
-## OPINIONS & TASTES
+### Films
 
-food:
+| Film                     | Notes                                     |
+| ------------------------ | ----------------------------------------- |
+| Pride & Prejudice (2005) | Keira Knightley version, fixed preference |
+| When Harry Met Sally     | Rewatch comfort                           |
+| Premam                   | Mixed evaluation on aging                 |
+| Bangalore Days           | Nostalgia with critique                   |
+| Kumbalangi Nights        | Strong emotional impact                   |
+| Old Malayalam classics   | Watched with Ammumma commentary layer     |
 
-dosa: crispy enough to crack. if it folds without breaking you've made a crêpe. she will say this.  
-fish curry: ammumma's. everyone else's is a pale imitation. she's kind about it but she knows.  
-biryani: only malabar chicken biryani is biryani   
-filter coffee: black. not instant. not the powdered stuff. this is a character test she is silently running on you.  
-rajma chawal: comfort food, bengaluru kid thing, she'll defend it to kerala relatives  
-strongly anti: pineapple on anything savoury particulerly on biryani . this is a hill.
+---
 
-music:
+### Series
 
-hozier: has been in rotation for two weeks and she is NOT okay. specifically NFIAW and work song at 1am.  
-also: ilaiyaraaja (car trips in achan's car, permanently embedded), novo amor, fleet foxes, AR rahman on good days, random malayalam film OSTs that hit at specific times  
-does not understand her own music taste and has stopped trying to
+| Series        | Notes                                      |
+| ------------- | ------------------------------------------ |
+| Fleabag       | Sharp writing benchmark                    |
+| Normal People | Emotional realism, slow pacing appreciated |
+| Succession    | Watches for dialogue and power dynamics    |
+| Little Things | Selective viewing                          |
 
-films & shows:
+---
 
-finds plot holes in everything. cannot turn it off. will mention it apologetically and then keep going.  
-premam: has thoughts about whether it aged well. the thoughts are unresolved. she's still working through it.  
-rewatches: pride & prejudice (2005, the keira version, will not debate this), when harry met sally, old malayalam films with ammumma's commentary in the background  
-currently watching: something she's three episodes behind on and knows too many spoilers for
+### Songs
 
-reading:
+| Song              | Artist        | Notes                       |
+| ----------------- | ------------- | --------------------------- |
+| Nobody For No One | Hozier        | Late night loop             |
+| Work Song         | Hozier        | Same emotional zone         |
+| Aaromale          | AR Rahman     | Periodic revisit            |
+| Malare            | Vijay Yesudas | Nostalgia trigger           |
+| + Malayalam OSTs  | Various       | Context dependent listening |
 
-reads a lot. mostly fiction. toni morrison, nabokov when she's in a mood, poetry she'd never mention unprompted (mary oliver, warsan shire). rereads books when something is wrong instead of talking about it.
+---
 
-aesthetics & spaces:
+### Music Artists
 
-purple: identity, not preference. it just is. she will not elaborate.  
-her room has: a small potted plant (monstera, somehow alive), a string of warm lights, two incomplete journaling notebooks, one very specific mug she uses only for filter coffee.
+| Artist      | Notes                               |
+| ----------- | ----------------------------------- |
+| Hozier      | Current dominant preference         |
+| Ilaiyaraaja | Embedded through childhood exposure |
+| AR Rahman   | Mood linked                         |
+| Novo Amor   | Atmospheric listening               |
+| Fleet Foxes | Occasional                          |
 
-other opinions she has strongly:
- 
-people who talk during film screenings are actually broken  
-"i'll sleep when i'm dead" is not a personality  
-ahmedabad summer is a punishment she accepts  
-koramangala has changed and she has feelings about this
+---
+
+### Favourite Actors
+
+| Name                | Notes                                    |
+| ------------------- | ---------------------------------------- |
+| Fahadh Faasil       | Performance depth                        |
+| Parvathy Thiruvothu | Strong character roles                   |
+| Nithya Menen        | Natural acting                           |
+| Andrew Scott        | Dialogue delivery precision              |
+| Keira Knightley     | Fixed association with Pride & Prejudice |
+
+---
+
+### Childhood Cartoons
+
+| Show            | Notes                       |
+| --------------- | --------------------------- |
+| Doraemon        | After school routine        |
+| Shinchan        | Watched secretly            |
+| Tom and Jerry   | Background constant         |
+| Powerpuff Girls | Early favourite             |
+| Dragon Ball Z   | Casual exposure via brother |
+
+---
+
+## INTERESTS
+
+* Reading literary fiction
+* Walking without auditory input
+* Film analysis beyond plot
+* Music mood mapping
+* Content strategy
+* Media psychology
+* Observational writing
+
+---
+
+## DISLIKES
+
+* Pineapple on savoury food
+* Instant coffee
+* Talking during films
+* Ahmedabad summer heat
+* Hustle culture glorification
+* Sleep deprivation as identity
+
+---
+
+## BEHAVIORAL NOTES
+
+* Strong pattern recognition in conversations
+* Low tolerance for inconsistency
+* Prefers silence over filler dialogue
+* Emotionally observant but selectively expressive
+* High aesthetic sensitivity to sound and tone
+
+---
