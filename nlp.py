@@ -238,11 +238,13 @@ def _build_system_prompt(
         if normal_patch:
             prompt += "\n\n" + normal_patch
         prompt += "\n\n" + _build_context_layer()
-        if group_chat_note:
-            prompt += "\n\n" + group_chat_note
 
     # Always inject exact IST timestamp — available in every mode (roast, flirt, normal).
     prompt += f"\n\n[current ist: {_ist_stamp()}]"
+
+    # Group chat note applies in all modes — roast/flirt also need to know who's in the room.
+    if group_chat_note:
+        prompt += "\n\n" + group_chat_note
 
     if author_name:
         prompt += (

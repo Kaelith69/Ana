@@ -25,8 +25,14 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 joke_service = DadJokeService(JOKE_SETTINGS)
 
-# Per-channel conversation history: last 10 exchanges (20 messages)
-_history: dict[int, deque] = defaultdict(lambda: deque(maxlen=20))
+# Per-user-per-channel conversation history: last 10 exchanges (20 messages) keyed by (user_id, channel_id).
+# Each user gets their own isolated conversation thread with Ana — no cross-user context leakage.
+_history: dict[tuple[int, int], deque] = defaultdict(lambda: deque(maxlen=20))
+
+# Shared channel context — rolling window of the last 14 messages from ALL users in a channel.
+# Recorded before trigger gating so Ana sees the full conversation, even messages that didn't trigger her.
+# Injected into the prompt only when multiple users are actively chatting (group conversation awareness).
+_channel_context: dict[int, deque] = defaultdict(lambda: deque(maxlen=14))
 
 # Per-user last-reply timestamp (user_id -> monotonic time)
 _user_last_reply: dict[int, float] = {}
@@ -204,7 +210,9 @@ def _fallback_response() -> str:
 def _normalize_outbound_text(text: str | None) -> str:
     if not text:
         return _fallback_response()
-    cleaned = re.sub(r"\s+", " ", str(text)).strip()
+    # Preserve newlines so _split_reply can work — only collapse repeated spaces within each line.
+    lines = [re.sub(r" {2,}", " ", line).strip() for line in str(text).split('\n')]
+    cleaned = '\n'.join(line for line in lines if line)
     if not cleaned:
         return _fallback_response()
     return cleaned[:1800]
@@ -420,7 +428,11 @@ async def _cleanup_cooldowns() -> None:
         del _user_last_reply[uid]
     for cid in stale_channels:
         del _channel_last_reply[cid]
-        _history.pop(cid, None)
+        # Remove all per-user history entries belonging to this stale channel.
+        stale_keys = [k for k in list(_history.keys()) if k[1] == cid]
+        for k in stale_keys:
+            del _history[k]
+        _channel_context.pop(cid, None)
 
 
 @bot.event
@@ -436,6 +448,15 @@ async def on_message(message):
 
     content = (message.content or "")
     lowered = content.lower()
+
+    # Record every non-bot message in the shared channel context before any gating.
+    # This captures the full channel conversation so Ana has group awareness even for
+    # messages that don't trigger her.
+    _channel_context[message.channel.id].append({
+        "uid": message.author.id,
+        "author": message.author.display_name,
+        "text": _resolve_mentions(content, message)[:200],
+    })
 
     # Keep explicit commands available regardless of trigger/reply gating.
     if content.startswith(str(bot.command_prefix)):
@@ -466,6 +487,7 @@ async def on_message(message):
         except Exception as cmd_err:
             print(f"[on_message] command error: {cmd_err}", file=sys.stderr)
             await dispatcher.finalize(_fallback_response(), path="handled_command_error")
+            return  # prevent fall-through into trigger/NLP processing after a command error
         finally:
             if dispatcher.is_finalized:
                 watchdog_task.cancel()
@@ -543,7 +565,17 @@ async def on_message(message):
                 if ref_text:
                     text_to_process = f"[replying to @{ref_author}: \"{ref_text}\"]\n{resolved_content}"
 
-        history = list(_history.get(cid, []))
+        # Inject shared channel context when multiple distinct users are active in this channel.
+        # This gives Ana group conversation awareness while keeping per-user history isolated.
+        recent_channel = list(_channel_context.get(cid, []))
+        # Exclude the current message (already appended early) from the context window.
+        prior_msgs = recent_channel[:-1] if recent_channel else []
+        if any(m["uid"] != uid for m in prior_msgs):
+            ctx_lines = [f"@{m['author']}: {m['text']}" for m in prior_msgs[-8:]]
+            shared_ctx = "[channel context — recent conversation:\n" + "\n".join(ctx_lines) + "]"
+            text_to_process = shared_ctx + "\n" + text_to_process
+
+        history = list(_history.get((uid, cid), []))
         async with message.channel.typing():
             reply = await _generate_reply_with_guarantee(
                 text_to_process,
@@ -555,13 +587,21 @@ async def on_message(message):
                 message.id,
             )
 
-        _history[cid].append({
+        _history[(uid, cid)].append({
             "role": "user",
-            "content": text_to_process,
+            "content": resolved_content,
             "name": _sanitize_name_for_api(author_name),
             "author": author_name,
         })
-        _history[cid].append({"role": "assistant", "content": reply})
+        _history[(uid, cid)].append({"role": "assistant", "content": reply})
+
+        # Record Ana's reply in the shared channel context so subsequent messages
+        # from any user can reference what she just said.
+        _channel_context[cid].append({
+            "uid": bot.user.id if bot.user else 0,
+            "author": "Ana",
+            "text": reply[:200],
+        })
 
         sent_at = asyncio.get_running_loop().time()
         _user_last_reply[uid] = sent_at
@@ -573,9 +613,58 @@ async def on_message(message):
             _bg_tasks.add(task)
             task.add_done_callback(_bg_tasks.discard)
 
-        sent = await dispatcher.finalize(reply, path="success")
+        # Split reply into naturally-paced chunks and optionally introduce a typo.
+        parts = _split_reply(reply)
+        typo_text, correction = _maybe_typo(parts[0])
+        parts[0] = typo_text
+
+        # First part goes through the guarantee dispatcher.
+        sent = await dispatcher.finalize(parts[0], path="success")
         if not sent:
             await dispatcher.finalize(_fallback_response(), path="success_recovery")
+        else:
+            # Typo self-correction arrives a beat later.
+            if correction:
+                await asyncio.sleep(random.uniform(0.3, 0.8))
+                try:
+                    await message.channel.send(correction)
+                except Exception:
+                    pass
+
+            # Additional thought chunks (newline-split parts of the reply).
+            for extra_part in parts[1:]:
+                await asyncio.sleep(random.uniform(0.7, 1.5))
+                try:
+                    await message.channel.send(extra_part)
+                except Exception:
+                    break
+
+            # Occasional emoji reaction (~7% chance).
+            if random.random() < 0.07:
+                try:
+                    await message.add_reaction(random.choice(_REACTIONS))
+                except Exception:
+                    pass
+
+            # Mode-specific follow-up line.
+            if is_flirt and random.random() < 0.35:
+                await asyncio.sleep(random.uniform(1.5, 3.5))
+                try:
+                    await message.channel.send(random.choice(_FLIRT_FOLLOWUPS))
+                except Exception:
+                    pass
+            elif is_roast and random.random() < 0.35:
+                await asyncio.sleep(random.uniform(1.5, 3.5))
+                try:
+                    await message.channel.send(random.choice(_ROAST_FOLLOWUPS))
+                except Exception:
+                    pass
+            elif random.random() < 0.06:
+                await asyncio.sleep(random.uniform(2.5, 5.5))
+                try:
+                    await message.channel.send(random.choice(_FOLLOWUPS))
+                except Exception:
+                    pass
 
     except (discord.HTTPException, OSError) as msg_err:
         print(f"[on_message] discord/os error uid={uid} cid={cid}: {msg_err}", file=sys.stderr)
