@@ -39,9 +39,14 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_BACKUP_API_KEY = os.getenv("GROQ_BACKUP_API_KEY")
 
 # Character profile storage:
-# - SYSTEM_PROMPT lets you override the profile inline from environment.
-# - CHARACTER_PROFILE_PATH points to a file loaded lazily by nlp.py only when needed.
+# - SYSTEM_PROMPT lets you fully override prompt text inline from environment.
+# - SYSTEM_PROMPT_PATH points to style/voice/system-instruction text.
+# - CHARACTER_PROFILE_PATH points to character facts and biographical context.
 SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT")
+SYSTEM_PROMPT_PATH = os.getenv(
+    "SYSTEM_PROMPT_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "ana_system_prompt.txt"),
+)
 CHARACTER_PROFILE_PATH = os.getenv(
     "CHARACTER_PROFILE_PATH",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "ana_character_profile.txt"),

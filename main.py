@@ -476,7 +476,11 @@ async def on_message(message):
             else:
                 await watchdog_task
 
-    is_trigger_word = bool(TRIGGER_PATTERN.search(lowered))
+    is_trigger_word = (
+        bool(TRIGGER_PATTERN.search(lowered))
+        or bool(ROAST_PATTERN.search(lowered))
+        or bool(FLIRT_PATTERN.search(lowered))
+    )
 
     # Respond when user directly replies to Ana's message.
     is_reply_to_ana = False

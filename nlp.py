@@ -7,7 +7,7 @@ from typing import List, Optional
 from groq import Groq, RateLimitError as GroqRateLimitError
 from config import (
     GEN1_API_KEY, GEN2_API_KEY, GROQ_API_KEY, GROQ_BACKUP_API_KEY,
-    SYSTEM_PROMPT, CHARACTER_PROFILE_PATH,
+    SYSTEM_PROMPT, SYSTEM_PROMPT_PATH, CHARACTER_PROFILE_PATH,
     GROQ_MODEL_WATERFALL, MODEL_SETTINGS,
 )
 
@@ -131,11 +131,26 @@ def _load_system_prompt() -> str:
     if _SYSTEM_PROMPT_CACHE is not None:
         return _SYSTEM_PROMPT_CACHE
 
+    chunks: list[str] = []
+    try:
+        with open(SYSTEM_PROMPT_PATH, "r", encoding="utf-8") as f:
+            style_prompt = f.read().strip()
+            if style_prompt:
+                chunks.append(style_prompt)
+    except Exception as e:
+        print(f"[prompt] failed to load system prompt from {SYSTEM_PROMPT_PATH!r}: {e}")
+
     try:
         with open(CHARACTER_PROFILE_PATH, "r", encoding="utf-8") as f:
-            _SYSTEM_PROMPT_CACHE = f.read().strip()
+            character_profile = f.read().strip()
+            if character_profile:
+                chunks.append("[character profile]\n" + character_profile)
     except Exception as e:
         print(f"[prompt] failed to load character profile from {CHARACTER_PROFILE_PATH!r}: {e}")
+
+    if chunks:
+        _SYSTEM_PROMPT_CACHE = "\n\n".join(chunks)
+    else:
         _SYSTEM_PROMPT_CACHE = "you are ana — real person in this server. reply briefly and naturally."
 
     return _SYSTEM_PROMPT_CACHE
