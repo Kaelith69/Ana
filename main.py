@@ -16,7 +16,6 @@ TRIGGER_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, TRIGGER_WORDS)) 
 ROAST_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, sorted(ROAST_WORDS))) + r')\b', re.IGNORECASE)
 FLIRT_PATTERN = re.compile(r'\b(?:' + '|'.join(map(re.escape, sorted(FLIRT_WORDS))) + r')\b', re.IGNORECASE)
 MENTION_TOKEN_PATTERN = re.compile(r'<@!?(\d+)>')
-NON_WORD_PATTERN = re.compile(r'[^\w\s]')
 
 intents = discord.Intents.default()
 intents.messages = True
@@ -391,6 +390,20 @@ async def _update_profile_bg(user_id: int, display_name: str, text: str) -> None
         pass
 
 
+async def _resolve_reference_message(message: discord.Message) -> discord.Message | None:
+    """Resolve the referenced Discord message, if any, without raising."""
+    if not message.reference:
+        return None
+    if isinstance(message.reference.resolved, discord.Message):
+        return message.reference.resolved
+    if not message.reference.message_id:
+        return None
+    try:
+        return await message.channel.fetch_message(message.reference.message_id)
+    except (discord.NotFound, discord.HTTPException, OSError):
+        return None
+
+
 @bot.command()
 @commands.is_owner()
 async def shutdown(ctx):
@@ -426,12 +439,16 @@ async def _cleanup_cooldowns() -> None:
     stale_channels = [cid for cid, ts in _channel_last_reply.items() if now - ts > CHANNEL_COOLDOWN * 20]
     for uid in stale_users:
         del _user_last_reply[uid]
+
+    stale_channel_ids = set(stale_channels)
+    if stale_channel_ids:
+        # Single pass over history keys avoids repeated scans per stale channel.
+        stale_history_keys = [key for key in list(_history.keys()) if key[1] in stale_channel_ids]
+        for key in stale_history_keys:
+            del _history[key]
+
     for cid in stale_channels:
         del _channel_last_reply[cid]
-        # Remove all per-user history entries belonging to this stale channel.
-        stale_keys = [k for k in list(_history.keys()) if k[1] == cid]
-        for k in stale_keys:
-            del _history[k]
         _channel_context.pop(cid, None)
 
 
@@ -448,6 +465,10 @@ async def on_message(message):
 
     content = (message.content or "")
     lowered = content.lower()
+    trigger_match = TRIGGER_PATTERN.search(lowered)
+    roast_match = ROAST_PATTERN.search(lowered)
+    flirt_match = FLIRT_PATTERN.search(lowered)
+    ref_msg = await _resolve_reference_message(message)
 
     # Record every non-bot message in the shared channel context before any gating.
     # This captures the full channel conversation so Ana has group awareness even for
@@ -498,25 +519,12 @@ async def on_message(message):
             else:
                 await watchdog_task
 
-    is_trigger_word = (
-        bool(TRIGGER_PATTERN.search(lowered))
-        or bool(ROAST_PATTERN.search(lowered))
-        or bool(FLIRT_PATTERN.search(lowered))
-    )
+    is_trigger_word = bool(trigger_match or roast_match or flirt_match)
 
     # Respond when user directly replies to Ana's message.
     is_reply_to_ana = False
-    if message.reference:
-        ref_msg = None
-        if isinstance(message.reference.resolved, discord.Message):
-            ref_msg = message.reference.resolved
-        elif message.reference.message_id:
-            try:
-                ref_msg = await message.channel.fetch_message(message.reference.message_id)
-            except (discord.NotFound, discord.HTTPException, OSError):
-                ref_msg = None
-        if ref_msg and bot.user and ref_msg.author.id == bot.user.id:
-            is_reply_to_ana = True
+    if ref_msg and bot.user and ref_msg.author.id == bot.user.id:
+        is_reply_to_ana = True
 
     if not is_trigger_word and not is_reply_to_ana:
         return
@@ -524,8 +532,8 @@ async def on_message(message):
     _log_message_lifecycle(message.id, "received", f"author={message.author.id} channel={message.channel.id}")
     dispatcher = ResponseDispatcher(message)
     watchdog_task = asyncio.create_task(_watchdog_finalize(message, dispatcher))
-    is_roast = bool(ROAST_PATTERN.search(lowered))
-    is_flirt = (not is_roast) and bool(FLIRT_PATTERN.search(lowered))
+    is_roast = bool(roast_match)
+    is_flirt = (not is_roast) and bool(flirt_match)
 
     now = asyncio.get_running_loop().time()
     uid = message.author.id
@@ -549,21 +557,12 @@ async def on_message(message):
 
         # If this message is a Discord reply, inject referenced-message context.
         text_to_process = resolved_content
-        if message.reference:
-            ref_msg = None
-            if isinstance(message.reference.resolved, discord.Message):
-                ref_msg = message.reference.resolved
-            elif message.reference.message_id:
-                try:
-                    ref_msg = await message.channel.fetch_message(message.reference.message_id)
-                except (discord.NotFound, discord.HTTPException, OSError):
-                    pass
-            if ref_msg:
-                ref_author = re.sub(r'[\r\n\t\[\]"\\]', ' ', ref_msg.author.display_name).strip()[:50]
-                ref_raw = _resolve_mentions((ref_msg.content or "")[:200], ref_msg)
-                ref_text = re.sub(r'[\r\n\t\[\]"\\]', ' ', ref_raw).strip()[:200]
-                if ref_text:
-                    text_to_process = f"[replying to @{ref_author}: \"{ref_text}\"]\n{resolved_content}"
+        if ref_msg:
+            ref_author = re.sub(r'[\r\n\t\[\]"\\]', ' ', ref_msg.author.display_name).strip()[:50]
+            ref_raw = _resolve_mentions((ref_msg.content or "")[:200], ref_msg)
+            ref_text = re.sub(r'[\r\n\t\[\]"\\]', ' ', ref_raw).strip()[:200]
+            if ref_text:
+                text_to_process = f"[replying to @{ref_author}: \"{ref_text}\"]\n{resolved_content}"
 
         # Inject shared channel context when multiple distinct users are active in this channel.
         # This gives Ana group conversation awareness while keeping per-user history isolated.
