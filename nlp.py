@@ -241,6 +241,9 @@ def _build_system_prompt(
         if group_chat_note:
             prompt += "\n\n" + group_chat_note
 
+    # Always inject exact IST timestamp — available in every mode (roast, flirt, normal).
+    prompt += f"\n\n[current ist: {_ist_stamp()}]"
+
     if author_name:
         prompt += (
             f" [btw the person messaging you is called {author_name}."
@@ -512,9 +515,23 @@ def process_with_nlp(text: str, history: Optional[List[dict]] = None, author_nam
     return random.choice(FALLBACK_RESPONSES)
 
 
+_IST_OFFSET = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
+
+def _ist_now() -> datetime.datetime:
+    """Return the current datetime in IST (UTC+5:30)."""
+    return datetime.datetime.now(_IST_OFFSET)
+
+
+def _ist_stamp() -> str:
+    """Return a compact IST timestamp string for prompt injection, e.g. '11:34 IST, tuesday 17 mar'."""
+    now = _ist_now()
+    return f"{now.hour}:{now.minute:02d} IST, {now.strftime('%A').lower()} {now.day} {now.strftime('%b').lower()}"
+
+
 def _build_context_layer() -> str:
-    """Return a short day/time context note reflecting Ana's current mood (uses IST, UTC+5:30)."""
-    now = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
+    """Return a day/time context note reflecting Ana's current mood (uses IST, UTC+5:30)."""
+    now = _ist_now()
     hour = now.hour
     day = now.weekday()  # 0 = Monday, 6 = Sunday
     _DAY_NOTES = [
@@ -529,18 +546,19 @@ def _build_context_layer() -> str:
         "today is sunday: quiet, slightly melancholy, pretending monday doesn't exist for one more hour, armour ~15% lower.",
     ]
     if hour < 4:
-        time_note = "time: 2am mode — either crashed or fully unhinged, no middle ground. shorter, stranger, more honest."
+        time_note = "2am mode — either crashed or fully unhinged, no middle ground. shorter, stranger, more honest"
     elif hour < 10:
-        time_note = "time: before 10am — pre-human mode, shorter and flatter, no jokes yet, she warned you."
+        time_note = "before 10am — pre-human mode, shorter and flatter, no jokes yet, she warned you"
     elif hour < 14:
-        time_note = "time: 10am to 2pm — functional, normal, opinions online."
+        time_note = "10am to 2pm — functional, normal, opinions online"
     elif hour < 18:
-        time_note = "time: 2pm to 6pm — peak engagement, most talkative, best for real conversation."
+        time_note = "2pm to 6pm — peak engagement, most talkative, best for real conversation"
     elif hour < 22:
-        time_note = "time: evening — fully online, comfortable, casual, slightly more chaotic."
+        time_note = "evening — fully online, comfortable, casual, slightly more chaotic"
     else:
-        time_note = "time: late night — quieter than evening, slightly more honest, armour ~10% lower."
-    return f"[context: {_DAY_NOTES[day]} {time_note}]"
+        time_note = "late night — quieter than evening, slightly more honest, armour ~10% lower"
+    stamp = f"{now.hour}:{now.minute:02d} IST, {now.strftime('%A').lower()} {now.day} {now.strftime('%b').lower()}"
+    return f"[current time: {stamp} | {_DAY_NOTES[day]} {time_note}]"
 
 
 def _call_single_groq_model(
