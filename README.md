@@ -360,6 +360,3 @@ Wiki references:
 
 ![Stats Graph](assets/stats.svg)
 
-## Validation Notes
-
-This README is generated against implementation as source of truth. If behavior probabilities or model order changes in code, update this document in the same change set. Future readers will still judge us either way, but at least they will be judging the current version.
